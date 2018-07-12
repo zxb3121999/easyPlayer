@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/activity_main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context="cn.jx.easyplayer.MainActivity">
+    <cn.jx.easyplayerlib.view.EasyVideoView
+        android:id="@+id/easy_video_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+    <Button
+        android:id="@+id/pause"
+        android:layout_alignParentBottom="true"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="PAUSE"/>
+    <Button
+        android:id="@+id/record"
+        android:layout_above="@+id/pause"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="录播"/>
+    <Button
+        android:onClick="ToRecorder"
+        android:layout_above="@+id/record"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="录制视频"/>
+</RelativeLayout>
