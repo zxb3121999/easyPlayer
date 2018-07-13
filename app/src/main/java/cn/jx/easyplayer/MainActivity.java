@@ -31,10 +31,10 @@ public class MainActivity extends AppCompatActivity {
     if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
       ActivityCompat.requestPermissions(this, new String[] { Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE }, 0);
     } else {
-      videoView.setVideoPath("http://replay.live.tianya.cn/live-151574941100022906--20180112173015.mp4");
+      //videoView.setVideoPath("http://replay.live.tianya.cn/live-151574941100022906--20180112173015.mp4");
       //videoView.setVideoPath( Environment.getExternalStorageDirectory().getAbsolutePath()+"/ffmpeg/"+"tt.mp4");
       //videoView.setVideoPath("/storage/emulated/0/tencent/MicroMsg/Weixin/test.mp4");
-      //videoView.setVideoPath("rtmp://live.hkstv.hk.lxdns.com/live/hks");
+      videoView.setVideoPath("rtmp://live.hkstv.hk.lxdns.com/live/hks");
       //videoView.setVideoPath("http://hdl3a.douyucdn.cn/live/64609rdkw7Kej3bb_900.flv?wsAuth=0dbce31573d7c2a42efc9d3b1e2efe11&token=app-android1-0-64609-b8ea9667eba374a3133e415a4fe74082&logo=0&expire=0&did=10786b63-0b2b-4204-a149-1181f7cb3480&ver=v3.7.1&channel=31&pt=1");
     }
     Button pause = (Button) findViewById(R.id.pause);

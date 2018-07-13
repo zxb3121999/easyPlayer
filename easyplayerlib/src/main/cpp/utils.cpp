@@ -37,6 +37,7 @@ int PacketQueue::put_packet(AVPacket *pkt) {
             cond.notify_one();
             break;
         } else {
+            av_log(NULL, AV_LOG_FATAL, "wait to push AVPacket.\n");
             full.wait(lock);
         }
     }
@@ -59,6 +60,7 @@ int PacketQueue::get_packet(AVPacket *pkt) {
             full.notify_one();
             return 0;
         } else {
+            av_log(NULL, AV_LOG_FATAL, "wait to get AVPacket.\n");
             cond.wait(lock);
         }
     }

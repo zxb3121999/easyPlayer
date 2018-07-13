@@ -7,6 +7,7 @@
 
 #include <android/native_window.h>
 #include <android/native_window_jni.h>
+#include "3rd/include/MemoryTrace.hpp"
 
 
 #define LOGD(format, ...)  __android_log_print(ANDROID_LOG_INFO,  "easyplayer-lib", format, ##__VA_ARGS__)
@@ -26,7 +27,6 @@ static const int MEDIA_ERROR = 100;
 static const int MEDIA_INFO = 200;
 
 ANativeWindow *nativeWindow;
-ANativeWindow_Buffer windowBuffer;
 jmethodID gOnResolutionChange = NULL;
 jmethodID gPostEventFromNative = NULL;
 jmethodID gPostEventFromNativeRecorder = NULL;
@@ -55,6 +55,37 @@ void on_state_change(ReleaseState _state) {
     std::unique_lock<std::mutex> lock(mutex);
     state = _state;
     state_condition.notify_all();
+}
+
+void release_player(){
+    if(state == ReleaseState::RUNNING)
+        on_state_change(ReleaseState::START);
+    release();
+    wait_state(ReleaseState::COMPLETE);
+    delete(mPlayer);
+    mPlayer = nullptr;
+    if (nativeWindow) {
+        ANativeWindow_release(nativeWindow);
+        nativeWindow = nullptr;
+    }
+    JNIEnv *env = NULL;
+    if (0 == gVm->AttachCurrentThread(&env, NULL)){
+        if(gObj){
+            env->DeleteGlobalRef(gObj);
+        }
+        gObj = nullptr;
+        if(gPostEventFromNative){
+            gOnResolutionChange = NULL;
+        }
+        if(gOnResolutionChange){
+            gOnResolutionChange = NULL;
+        }
+    }
+    is_in_background = false;
+    can_play_in_background = true;
+    leaktracer::MemoryTrace::GetInstance().stopAllMonitoring();
+    leaktracer::MemoryTrace::GetInstance().writeLeaksToFile("/sdcard/leaks.out");
+    LOGD("清理完成");
 }
 jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     gVm = vm;
@@ -96,6 +127,7 @@ void showPic() {
     uint8_t *vOutBuffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
     av_image_fill_arrays(frameRGBA->data, frameRGBA->linesize, vOutBuffer, AV_PIX_FMT_RGBA, mPlayer->viddec->get_width(), mPlayer->viddec->get_height(), 1);
     on_state_change(ReleaseState::RUNNING);
+    ANativeWindow_Buffer windowBuffer;
     while (state==ReleaseState::RUNNING&&mPlayer->get_img_frame(frameRGBA)) {
         if (mPlayer->get_paused()) {
             mPlayer->wait_paused();
@@ -117,7 +149,6 @@ void showPic() {
     free(vOutBuffer);
     picThread--;
     av_frame_free(&frameRGBA);
-    LOGD("图片播放完成");
     on_state_change(ReleaseState::COMPLETE);
     return;
 }
@@ -155,6 +186,10 @@ void listener(EasyPlayer *player,int what, int arg1, int arg2, char *msg) {
         env->CallVoidMethod(gObj, gPostEventFromNative, what, arg1, arg2,env->NewStringUTF(msg));
         gVm->DetachCurrentThread();
     }
+    if(what == 6 && mPlayer->state == PlayerState::STOP){
+        release_player();
+        return;
+    }
 }
 
 
@@ -189,6 +224,7 @@ extern "C"
 void
 Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1setDataSource
         (JNIEnv *env, jobject obj, jstring path) {
+    leaktracer::MemoryTrace::GetInstance().startMonitoringAllThreads();
     mPlayer = new EasyPlayer();
     char inputStr[500] = {0};
     sprintf(inputStr, "%s", env->GetStringUTFChars(path, NULL));
@@ -312,15 +348,8 @@ void
 Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1release
         (JNIEnv *env, jobject obj, jlong mSec) {
     if (mPlayer != nullptr) {
-        if(state == ReleaseState::RUNNING)
-            on_state_change(ReleaseState::START);
-        release();
-        wait_state(ReleaseState::COMPLETE);
-        mPlayer->release();
-        delete(mPlayer);
-        LOGD("清理完成");
+        mPlayer->stop();
     }
-    mPlayer = nullptr;
 }
 
 
@@ -351,8 +380,8 @@ Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1setBackgroundState(JNIEnv *env
     is_in_background = isBackground;
     if (mPlayer == nullptr)
         return;
-    if (is_in_background) {
-        if (!isBackground) {
+    if (!can_play_in_background) {
+        if (is_in_background) {
             mPlayer->pause();
             return;
         }
@@ -377,7 +406,6 @@ Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1stopRecorder(JNIEnv *env, jobj
         mPlayer->stop_recorder();
     }
 }
-
 void event_listener(int what, int error_code, char *msg) {
     JNIEnv *env = NULL;
     if (0 == gVm->AttachCurrentThread(&env, NULL)) {

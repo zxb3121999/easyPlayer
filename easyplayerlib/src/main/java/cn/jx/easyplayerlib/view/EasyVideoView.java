@@ -4,13 +4,11 @@ import android.content.Context;
 import android.os.Build;
 import android.support.annotation.RequiresApi;
 import android.util.AttributeSet;
-import android.view.Display;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.MediaController;
 import cn.jx.easyplayerlib.R;
@@ -274,12 +272,12 @@ public class EasyVideoView extends FrameLayout implements MediaController.MediaP
 
     public void onPause(){
         if (mMediaPlayer!=null){
-            mMediaPlayer.setBackground(true);
+            mMediaPlayer.setBackgroundState(true);
         }
     }
     public void onResume(){
         if(mMediaPlayer!=null){
-            mMediaPlayer.setBackground(false);
+            mMediaPlayer.setBackgroundState(false);
         }
     }
     public void onDestory(){
@@ -292,18 +290,8 @@ public class EasyVideoView extends FrameLayout implements MediaController.MediaP
                 @RequiresApi(api = Build.VERSION_CODES.JELLY_BEAN_MR1) public void onVideoSizeChanged(IMediaPlayer mp, int width, int height) {
                     mVideoWidth = mp.getVideoWidth();
                     mVideoHeight = mp.getVideoHeight();
-//                    mSurfaceHolder.setFixedSize(mVideoWidth, mVideoHeight);
-//                    requestLayout();
-                    Display display = getDisplay();
-                    final int displayWidth = display.getWidth();
-                    if (mVideoWidth != 0 && mVideoHeight != 0) {
-                        ViewGroup.LayoutParams params = (ViewGroup.LayoutParams) getLayoutParams();
-                        //params.height = displayWidth*mVideoHeight/mVideoWidth;
-                        //params.height = 1280;
-                        //params.width = 720;
-                        //setLayoutParams(params);
-                    }
-
+                    mSurfaceHolder.setFixedSize(mVideoWidth, mVideoHeight);
+                    requestLayout();
                 }
             };
 

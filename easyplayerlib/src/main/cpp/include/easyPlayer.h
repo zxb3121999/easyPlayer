@@ -31,6 +31,7 @@
 
 enum class PlayerState {
     UNKNOWN,
+    STOP,
     INIT,
     BUFFERING,
     READY,
@@ -66,6 +67,7 @@ public:
     bool get_aud_buffer(int &nextSize, uint8_t *outputBuffer);
     void wait_state(PlayerState need_state);
     void wait_paused();
+    void stop();
     void release();
     bool is_playing() {
         return state == PlayerState::PLAYING && !paused;
@@ -166,10 +168,6 @@ private:
     AVStream *audio_st;
 
     int audio_hw_buf_size;
-    uint8_t *audio_buf;
-    uint8_t *audio_buf1;
-    unsigned int audio_buf_size; /* in bytes */
-    unsigned int audio_buf1_size;
     int audio_buf_index; /* in bytes */
     int audio_write_buf_size;
     int audio_volume;
@@ -200,6 +198,7 @@ private:
     static const int MEDIA_BUFFERING_UPDATE = 3;
     static const int MEDIA_SEEK_COMPLETE = 4;
     static const int MEDIA_SET_VIDEO_SIZE = 5;
+    static const int MEDIA_STOP = 6;
     static const int MEDIA_TIMED_TEXT = 99;
     static const int MEDIA_ERROR = -1;
     static const int REOCRDER_ERROR = -1000;

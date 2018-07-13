@@ -1,6 +1,7 @@
 package cn.jx.easyplayer;
 
 import android.Manifest;
+import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.ImageFormat;
@@ -60,9 +61,10 @@ public class RecorderActivity extends AppCompatActivity {
       @Override public void surfaceCreated(SurfaceHolder holder) {
         if (mCamera == null) {
           initCamera();
+        }else {
+          startPreviewDisplay();
+          mCamera.cancelAutoFocus();
         }
-        startPreviewDisplay();
-        mCamera.cancelAutoFocus();
       }
 
       @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
@@ -148,6 +150,8 @@ public class RecorderActivity extends AppCompatActivity {
     }
     mCamera.setParameters(mParameters);
     followScreenOrientation();
+    startPreviewDisplay();
+    mCamera.cancelAutoFocus();
   }
 
   /**
@@ -200,9 +204,7 @@ public class RecorderActivity extends AppCompatActivity {
   }
 
   public void getState(View v) {
-    if (mRecorder != null) {
-      System.out.println("视频录制状态:" + mRecorder.getRecorderState());
-    }
+    startActivity(new Intent(this,MainActivity.class));
   }
 
   private void followScreenOrientation() {

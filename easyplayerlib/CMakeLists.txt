@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 3.4.1)
 set(lib_src_DIR ${CMAKE_SOURCE_DIR}/src/main/jniLibs/${ANDROID_ABI})
+SET(CMAKE_BUILD_TYPE "Debug")
 include_directories(
         ${CMAKE_SOURCE_DIR}/src/main/cpp/include
+)
+include_directories(
+        ${CMAKE_SOURCE_DIR}/src/main/cpp/3rd/include
 )
 #add_library(x265_lib SHARED IMPORTED)
 #set_target_properties(x265_lib PROPERTIES IMPORTED_LOCATION
@@ -18,6 +22,8 @@ add_library(player-lib SHARED
             ${CMAKE_SOURCE_DIR}/src/main/cpp/easyPlayer.cpp
             ${CMAKE_SOURCE_DIR}/src/main/cpp/recorder.cpp
             ${CMAKE_SOURCE_DIR}/src/main/cpp/transform.cpp
+            ${CMAKE_SOURCE_DIR}/src/main/cpp/3rd/AllocationHandlers.cpp
+            ${CMAKE_SOURCE_DIR}/src/main/cpp/3rd/MemoryTrace.cpp
             )
 # Include libraries needed for VideoPlayer lib
 target_link_libraries(player-lib

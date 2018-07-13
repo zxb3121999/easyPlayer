@@ -63,11 +63,16 @@ public:
     virtual void decode() = 0;
     void init(AVCodecContext *ctx);
     void start_decode_thread();
+    void flush();
+    void wait_thread_stop(){
+        while(is_thread_running){}
+    }
     PacketQueue *pkt_queue = NULL;
     FrameQueue *frame_queue = NULL;
     AVCodecContext *avctx = NULL;
     ~Decoder();
 protected:
+    bool is_thread_running = false;
     AVPacket *pkt = nullptr;
     int pkt_serial;
     int finished;

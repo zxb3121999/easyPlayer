@@ -419,26 +419,39 @@ void Decoder::init(AVCodecContext *ctx) {
 }
 
 Decoder::~Decoder() {
-    if (avctx) {
-       avctx = NULL;
+    flush();
+    wait_thread_stop();
+    if(pkt_queue){
+        delete(pkt_queue);
+        pkt_queue = nullptr;
+    }
+    if(frame_queue){
+        delete(frame_queue);
+        frame_queue = nullptr;
     }
     if(pkt){
         av_packet_free(&pkt);
     }
     pkt = nullptr;
-    if(pkt_queue){
-        pkt_queue->flush();
-        delete(pkt_queue);
-    }
-    if(frame_queue){
-        frame_queue->flush();
-        delete(frame_queue);
+
+    if (avctx) {
+       avctx = NULL;
     }
 }
 
+void Decoder::flush() {
+    if(pkt_queue){
+        pkt_queue->set_abort(1);
+        pkt_queue->flush();
+    }
+    if(frame_queue){
+        frame_queue->flush();
+    }
+}
 //开启解码线程
 void Decoder::start_decode_thread() {
     pkt_queue->set_abort(0);
+    is_thread_running = true;
     std::thread t(&Decoder::decode, this);
     t.detach();//线程分离
 }
@@ -493,11 +506,12 @@ void VideoDecoder::decode() {
     for (;;) {
         if (pkt_queue->get_abort()) break;
         if (decoder_decode_frame() < 0) {
-            av_log(NULL, AV_LOG_FATAL, "video decoder thread is completed");
             frame_queue->put_null_frame();
-            return;
+            break;
         }
     }
+    is_thread_running = false;
+    av_log(NULL, AV_LOG_FATAL, "video decoder thread is completed");
 }
 
 //从AVPacket解码出无压缩音频数据
@@ -541,11 +555,12 @@ void AudioDecoder::decode() {
     for (;;) {
         if (pkt_queue->get_abort()) break;
         if (decoder_decode_frame() < 0) {
-            av_log(NULL, AV_LOG_FATAL, "audio decoder thread is completed");
             frame_queue->put_null_frame();
-            return;
+            break;
         }
     }
+    is_thread_running = false;
+    av_log(NULL, AV_LOG_FATAL, "audio decoder thread is completed");
 }
 
 //获取channels

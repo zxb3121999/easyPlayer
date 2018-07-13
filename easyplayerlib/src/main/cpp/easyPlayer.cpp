@@ -88,8 +88,15 @@ void EasyPlayer::do_play() {
     recorder_queue.set_abort(0);
     abort_request = 0;
     while (true) {
-        if (abort_request)
+        if (abort_request){
+            if (video_stream >= 0) {
+                viddec->pkt_queue->put_nullpacket();
+            }
+            if (audio_stream >= 0) {
+                auddec->pkt_queue->put_nullpacket();
+            }
             break;
+        }
         if (paused)
             av_read_pause(ic);//暂停
         else
@@ -148,8 +155,10 @@ void EasyPlayer::do_play() {
     }
     av_packet_free(&recorder);
     av_packet_free(&pkt);
-    on_state_change(PlayerState::COMPLETED);
-    notify_message(MEDIA_PLAYBACK_COMPLETE,0,0,"播放视频结束");
+    if(state == PlayerState::STOP){
+        release();
+        notify_message(MEDIA_STOP,0,0,"停止播放");
+    }
 }
 
 bool EasyPlayer::is_realtime() {
@@ -248,13 +257,14 @@ bool EasyPlayer::has_audio() {
 
 //获取可显示的图片
 bool EasyPlayer::get_img_frame(AVFrame *frame) {
-    if (frame == nullptr) return false;
+    if (!frame || !viddec) return false;
     auto av_frame = viddec->frame_queue->get_frame();
     if (av_frame == nullptr) {//文件结束
         if (recorder) {
             stop_recorder();
         }
-        on_state_change(PlayerState::COMPLETED);
+        if(state != PlayerState::STOP&&state!=PlayerState::COMPLETED)
+            on_state_change(PlayerState::COMPLETED);
         return false;
     }
     if (!recorder) {
@@ -272,14 +282,15 @@ bool EasyPlayer::get_img_frame(AVFrame *frame) {
 
 //获取音频数据
 bool EasyPlayer::get_aud_buffer(int &nextSize, uint8_t *outputBuffer) {
-    if (outputBuffer == nullptr) return false;
+    if (!outputBuffer||!auddec) return false;
     auto av_frame = auddec->frame_queue->get_frame();
     if (av_frame == nullptr) {
         nextSize = 0;
         if (recorder) {
             stop_recorder();
         }
-        on_state_change(PlayerState::COMPLETED);
+        if(state != PlayerState::STOP&&state!=PlayerState::COMPLETED)
+            on_state_change(PlayerState::COMPLETED);
         return false;
     }
     if (!recorder) {
@@ -312,15 +323,29 @@ void EasyPlayer::on_state_change(PlayerState state) {
     std::unique_lock<std::mutex> lock(mutex);
     this->state = state;
     state_condition.notify_all();
+    if(this->state == PlayerState::COMPLETED){
+        notify_message(MEDIA_PLAYBACK_COMPLETE,0,0,"视频播放完成");
+    }
 }
 
 EasyPlayer::~EasyPlayer() {
     release();
 }
-
+void EasyPlayer::stop() {
+    if(state >= PlayerState::READY){
+        abort_request = 1;
+        on_state_change(PlayerState::STOP);
+    }
+}
 void EasyPlayer::release() {
-    abort_request = 1;
-//    wait_state(PlayerState::COMPLETED);
+    if(viddec){
+        viddec->flush();
+        viddec->wait_thread_stop();
+    }
+    if(auddec){
+        auddec->flush();
+        auddec->wait_thread_stop();
+    }
     if (ic) {
         avformat_free_context(ic);
         ic = NULL;
@@ -329,16 +354,36 @@ void EasyPlayer::release() {
         avformat_free_context(out);
         out = NULL;
     }
+    if(viddec){
+        delete(viddec);
+        viddec = nullptr;
+    }
+    if(auddec){
+        delete(auddec);
+        auddec = nullptr;
+    }
     if(filename){
         delete(filename);
+        filename = nullptr;
     }
     if(savename){
         delete(savename);
+        savename = nullptr;
     }
-    if(viddec)
-        delete(viddec);
-    if(auddec)
-        delete(auddec);
+    if(video_st){
+        video_st = NULL;
+    }
+    if(audio_st){
+        audio_st = NULL;
+    }
+    if(swr_ctx){
+        swr_free(&swr_ctx);
+        swr_ctx = NULL;
+    }
+    if(img_convert_ctx){
+        sws_freeContext(img_convert_ctx);
+        img_convert_ctx = NULL;
+    }
     av_log(NULL,AV_LOG_FATAL,"播放器清理完成");
 }
 
