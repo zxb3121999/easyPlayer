@@ -435,7 +435,8 @@ Decoder::~Decoder() {
     pkt = nullptr;
 
     if (avctx) {
-       avctx = NULL;
+        avcodec_free_context(&avctx);
+        avctx = NULL;
     }
 }
 
@@ -445,6 +446,7 @@ void Decoder::flush() {
         pkt_queue->flush();
     }
     if(frame_queue){
+        frame_queue->set_stop_state(true);
         frame_queue->flush();
     }
 }
@@ -475,7 +477,11 @@ int VideoDecoder::decoder_decode_frame() {
         if (pkt_queue->get_abort())
             return -1;
         if (!packet_pending || pkt_queue->get_serial() != pkt_serial) {
-            if (pkt_queue->get_packet(pkt) < 0 || pkt->size == 0) return -1;
+            if (pkt_queue->get_packet(pkt) < 0) return -1;
+            if(pkt->size==0){
+                av_packet_unref(pkt);
+                return -1;
+            }
         }
         ret = avcodec_send_packet(avctx, pkt);
         av_packet_unref(pkt);
@@ -524,6 +530,7 @@ int AudioDecoder::decoder_decode_frame() {
             if (pkt_queue->get_packet(pkt) < 0) return -1;
         }
         if (pkt->size == 0) {
+            av_packet_unref(pkt);
             return -1;
         }
         //从AVPacket中解码出AVFrame

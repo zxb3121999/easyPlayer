@@ -19,6 +19,7 @@ extern "C"{
 #include "libavfilter/buffersink.h"
 #include "libavcodec/avcodec.h"
 #include "libavfilter/avfilter.h"
+#include "libavutil/avutil.h"
 };
 
 
@@ -47,7 +48,7 @@ private:
     std::mutex mutex;
     std::condition_variable cond;
     std::condition_variable full;
-    const size_t MAX_SIZE = 100;
+    const size_t MAX_SIZE = 1000;
 
 };
 
@@ -77,12 +78,20 @@ public:
     size_t get_size();
     int64_t frame_queue_last_pos();
     void flush();
+    void set_stop_state(bool stop){
+        is_stop = stop;
+        if(is_stop){
+            empty.notify_all();
+            full.notify_all();
+        }
+    }
 private:
+    bool is_stop = false;
     std::queue<std::shared_ptr<Frame>> queue;
     std::mutex mutex;
     std::condition_variable empty;
     std::condition_variable full;
-    const size_t MAX_SIZE = 100;
+    const size_t MAX_SIZE = 1000;
 };
 
 #endif //EASYPLAYER_MASTER_UTILS_H

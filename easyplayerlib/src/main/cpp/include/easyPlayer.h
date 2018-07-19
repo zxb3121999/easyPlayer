@@ -10,9 +10,17 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include "coder.h"
+#include <android/native_window.h>
+#include <android/native_window_jni.h>
+#include <SLES/OpenSLES_Android.h>
+#include <SLES/OpenSLES.h>
+#include <SLES/OpenSLES_Android.h>
+#include <jni.h>
+#include <pthread.h>
+#include <assert.h>
 
-#define ERROR_OK 0
-#define ERROR_MALLOC_CONTEXT -3001
+#define  ERROR_OK 0
+#define  ERROR_MALLOC_CONTEXT -3001
 #define  ERROR_WRITE_HEADER -3002
 #define  ERROR_OPEN_FILE -4001
 #define  ERROR_OPEN_VIDEO_ENCODER -1001
@@ -33,9 +41,10 @@ enum class PlayerState {
     UNKNOWN,
     STOP,
     INIT,
-    BUFFERING,
     READY,
+    BUFFERING,
     PLAYING,
+    BUFFERING_COMPLETED,
     COMPLETED,
 };
 
@@ -73,11 +82,19 @@ public:
         return state == PlayerState::PLAYING && !paused;
     }
     void play() {
-        if (state == PlayerState::READY||state == PlayerState::COMPLETED) {
+        if (state == PlayerState::READY||state == PlayerState ::BUFFERING||state == PlayerState::COMPLETED) {
             std::unique_lock<std::mutex> lock(mutex);
             state = PlayerState::PLAYING;
             paused = false;
             pause_condition.notify_all();
+        }
+        if(audio_complete&&has_audio()){
+            std::thread play_audio(&EasyPlayer::play_audio,this);
+            play_audio.detach();
+        }
+        if(video_complete&&has_video()){
+            std::thread play_video(&EasyPlayer::play_video,this);
+            play_video.detach();
         }
         play_when_ready = true;
     }
@@ -94,6 +111,36 @@ public:
     bool get_paused() {
         return paused;
     }
+    void set_window(ANativeWindow *window){
+        if(nativeWindow){
+            ANativeWindow_release(nativeWindow);
+        }
+        nativeWindow = window;
+        if(state == PlayerState::PLAYING&&has_video()){
+            if (0 > ANativeWindow_setBuffersGeometry(nativeWindow, viddec->get_width(), viddec->get_height(), WINDOW_FORMAT_RGBA_8888)) {
+                ANativeWindow_release(nativeWindow);
+                return;
+            }
+        }
+    }
+    void set_play_state(bool is_audio, bool state){
+        if(is_audio){
+            audio_complete = state;
+        } else{
+            video_complete = state;
+        }
+
+        if(audio_complete&&video_complete){
+            if(this->state != PlayerState::STOP){
+                on_state_change(PlayerState::COMPLETED);
+            } else{
+                stop_condition.notify_all();
+            }
+        }
+    }
+    void set_audio_call_back( slAndroidSimpleBufferQueueCallback callback){
+        this->callback = callback;
+    }
     int64_t get_duration() {
         if (ic != nullptr) {
             return (ic->duration)/1000;
@@ -105,6 +152,9 @@ public:
     void stream_seek(int64_t pos);
     void set_event_listener(void (*cb)(EasyPlayer *player,int, int, int,char *)) {
         event_listener = cb;
+    }
+    void set_background_listener(bool (*cb)()){
+        is_in_background_listener = cb;
     }
     void recorder_run();
     void start_recorder(const std::string save_filename);
@@ -123,16 +173,10 @@ public:
     char *filename = nullptr;
     char *savename = nullptr;
     int abort_request = 0;
-    int force_refresh;
 
-    int last_paused;
-    int queue_attachments_req;
     bool seek_req = false;
     int seek_flags;
     int64_t seek_pos;
-    int64_t seek_rel;
-    int read_pause_return;
-    bool realtime;
     AudioDecoder *auddec = nullptr;
     VideoDecoder *viddec = nullptr;
     PlayerState state = PlayerState::UNKNOWN;
@@ -142,6 +186,9 @@ private:
             event_listener(this,state,error_code,ffmpeg_code,err_msg);
         }
     }
+    ANativeWindow *nativeWindow = NULL;
+    void play_video();
+    void play_audio();
     void read();
     void do_play();
     bool init_context();
@@ -150,41 +197,65 @@ private:
     void on_state_change(PlayerState state);
     int last_video_stream, last_audio_stream;
     int video_stream = -1;
-    AVStream *video_st = NULL;
     bool paused = false;
     bool play_when_ready = false;
     bool file_changed = false;
     void (*event_listener)(EasyPlayer *,int, int, int,char *);
-
-    double max_frame_duration;      // maximum duration of a frame - above this, we consider the jump a timestamp discontinuity
+    bool (*is_in_background_listener)();
     struct SwsContext *img_convert_ctx = NULL;
 
     double audio_clock = 0;
-    int audio_clock_serial;
-    double audio_diff_cum; /* used for AV difference average computation */
-    double audio_diff_avg_coef;
-    double audio_diff_threshold;
-    int audio_diff_avg_count;
-    AVStream *audio_st;
 
-    int audio_hw_buf_size;
-    int audio_buf_index; /* in bytes */
-    int audio_write_buf_size;
-    int audio_volume;
-    int muted;
     struct SwrContext *swr_ctx = NULL;
-    int frame_drops_early;
-    int frame_drops_late;
-    int eof;
 
     int audio_stream = -1;
-    int av_sync_type;
 
+    bool audio_complete = true;
+    bool video_complete = true;
     int64_t start_time = AV_NOPTS_VALUE;
     int64_t duration = AV_NOPTS_VALUE;
     std::mutex mutex;
     std::condition_variable state_condition;
     std::condition_variable pause_condition;
+    std::mutex audio_mutex;
+    std::condition_variable audio_condition;
+    std::mutex stop_mutex;
+    std::condition_variable stop_condition;
+    //open sles start
+    SLObjectItf engineObject = NULL;
+    SLEngineItf engineEngine = NULL;
+
+// output mix interfaces
+    SLObjectItf outputMixObject = NULL;
+    SLEnvironmentalReverbItf outputMixEnvironmentalReverb = NULL;
+
+// buffer queue player interfaces
+    SLObjectItf bqPlayerObject = NULL;
+    SLPlayItf bqPlayerPlay = NULL;
+    SLAndroidSimpleBufferQueueItf bqPlayerBufferQueue = NULL;
+    SLEffectSendItf bqPlayerEffectSend = NULL;
+    SLMuteSoloItf bqPlayerMuteSolo = NULL;
+    SLVolumeItf bqPlayerVolume = NULL;
+    SLmilliHertz bqPlayerSampleRate = 0;
+    short *resampleBuf = NULL;
+// pointer and size of the next player buffer to enqueue, and number of remaining buffers
+    uint8_t *outputBuffer = NULL;
+    int nextSize =0;
+
+// aux effect on the output mix, used by the buffer queue player
+    const SLEnvironmentalReverbSettings reverbSettings = SL_I3DL2_ENVIRONMENT_PRESET_STONECORRIDOR;
+    const int outputBufferSize = 8196;
+    void createAudioEngine();
+    void createBufferQueueAudioPlayer(int sampleRate, int channel);
+    friend void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context);
+    slAndroidSimpleBufferQueueCallback callback;
+    void releaseResampleBuf(void);
+    void release_sles();
+    void wait_for_audio_completed(){
+        std::unique_lock<std::mutex> lock(audio_mutex);
+        audio_condition.wait(lock);
+    }
+    //open sles end
 
     bool recorder = false;
     PacketQueue recorder_queue;

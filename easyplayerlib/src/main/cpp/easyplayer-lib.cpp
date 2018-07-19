@@ -1,14 +1,6 @@
-#include <jni.h>
 #include <string>
-#include <thread>
-#include <mutex>
 #include <android/log.h>
-#include <opensles.h>
-
-#include <android/native_window.h>
-#include <android/native_window_jni.h>
-#include "3rd/include/MemoryTrace.hpp"
-
+#include "easyPlayer.h"
 
 #define LOGD(format, ...)  __android_log_print(ANDROID_LOG_INFO,  "easyplayer-lib", format, ##__VA_ARGS__)
 
@@ -26,7 +18,6 @@ static const int MEDIA_TIMED_TEXT = 99;
 static const int MEDIA_ERROR = 100;
 static const int MEDIA_INFO = 200;
 
-ANativeWindow *nativeWindow;
 jmethodID gOnResolutionChange = NULL;
 jmethodID gPostEventFromNative = NULL;
 jmethodID gPostEventFromNativeRecorder = NULL;
@@ -35,63 +26,46 @@ EasyPlayer *mPlayer = nullptr;
 EasyRecorder *recorder = nullptr;
 bool can_play_in_background = true;
 bool is_in_background = false;
-std::mutex mutex;
-std::condition_variable state_condition;
-enum class ReleaseState{
-    UNKNOWN,
-    RUNNING,
-    START,
-    COMPLETE,
-};
-ReleaseState state = ReleaseState ::COMPLETE;
-//
-void wait_state(ReleaseState need_state) {
-    std::unique_lock<std::mutex> lock(mutex);
-    state_condition.wait(lock, [need_state] {
-        return state >= need_state;
-    });
-}
-void on_state_change(ReleaseState _state) {
-    std::unique_lock<std::mutex> lock(mutex);
-    state = _state;
-    state_condition.notify_all();
-}
 
 void release_player(){
-    if(state == ReleaseState::RUNNING)
-        on_state_change(ReleaseState::START);
-    release();
-    wait_state(ReleaseState::COMPLETE);
     delete(mPlayer);
     mPlayer = nullptr;
-    if (nativeWindow) {
-        ANativeWindow_release(nativeWindow);
-        nativeWindow = nullptr;
-    }
-    JNIEnv *env = NULL;
-    if (0 == gVm->AttachCurrentThread(&env, NULL)){
-        if(gObj){
-            env->DeleteGlobalRef(gObj);
-        }
-        gObj = nullptr;
-        if(gPostEventFromNative){
-            gOnResolutionChange = NULL;
-        }
-        if(gOnResolutionChange){
-            gOnResolutionChange = NULL;
-        }
-    }
     is_in_background = false;
     can_play_in_background = true;
-    leaktracer::MemoryTrace::GetInstance().stopAllMonitoring();
-    leaktracer::MemoryTrace::GetInstance().writeLeaksToFile("/sdcard/leaks.out");
     LOGD("清理完成");
 }
+
+
 jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     gVm = vm;
+    av_register_all();
     return JNI_VERSION_1_4;
 }
-
+void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
+    assert(mPlayer);
+    assert(bq == mPlayer->bqPlayerBufferQueue);
+    assert(NULL == context);
+    if (mPlayer->get_paused()) {
+        mPlayer->wait_paused();
+    }
+    // for streaming playback, replace this test by logic to find and fill the next buffer
+    mPlayer->get_aud_buffer(mPlayer->nextSize, mPlayer->outputBuffer);
+    if (NULL != mPlayer->outputBuffer && 0 != mPlayer->nextSize) {
+        SLresult result;
+        // enqueue another buffer
+        result = (*mPlayer->bqPlayerBufferQueue)->Enqueue(mPlayer->bqPlayerBufferQueue, mPlayer->outputBuffer, mPlayer->nextSize);
+        // the most likely other result is SL_RESULT_BUFFER_INSUFFICIENT,
+        // which for this code example would indicate a programming error
+        if (SL_RESULT_SUCCESS != result) {
+            (*mPlayer->bqPlayerPlay)->SetPlayState(mPlayer->bqPlayerPlay, SL_PLAYSTATE_STOPPED);
+            mPlayer->audio_condition.notify_all();
+        }
+        (void) result;
+    } else {
+        (*mPlayer->bqPlayerPlay)->SetPlayState(mPlayer->bqPlayerPlay, SL_PLAYSTATE_STOPPED);
+        mPlayer->audio_condition.notify_all();
+    }
+}
 //注册播放回调
 extern "C"
 void
@@ -109,73 +83,14 @@ Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1nativeInit
 }
 
 
-int picThread = 0;
-
-//视频播放
-void showPic() {
-    picThread++;
-    mPlayer->wait_state(PlayerState::READY);
-    if (!mPlayer->has_video()) return;
-    if (0 > ANativeWindow_setBuffersGeometry(nativeWindow, mPlayer->viddec->get_width(), mPlayer->viddec->get_height(), WINDOW_FORMAT_RGBA_8888)) {
-        LOGD("Couldn't set buffers geometry.\n");
-        ANativeWindow_release(nativeWindow);
-        on_state_change(ReleaseState::COMPLETE);
-        return;
-    }
-    AVFrame *frameRGBA = av_frame_alloc();
-    int numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGBA, mPlayer->viddec->get_width(), mPlayer->viddec->get_height(), 1);
-    uint8_t *vOutBuffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
-    av_image_fill_arrays(frameRGBA->data, frameRGBA->linesize, vOutBuffer, AV_PIX_FMT_RGBA, mPlayer->viddec->get_width(), mPlayer->viddec->get_height(), 1);
-    on_state_change(ReleaseState::RUNNING);
-    ANativeWindow_Buffer windowBuffer;
-    while (state==ReleaseState::RUNNING&&mPlayer->get_img_frame(frameRGBA)) {
-        if (mPlayer->get_paused()) {
-            mPlayer->wait_paused();
-        }
-        if (is_in_background)
-            continue;
-        if (ANativeWindow_lock(nativeWindow, &windowBuffer, NULL) < 0) {
-            LOGD("cannot lock window");
-        } else {
-            uint8_t *dst = (uint8_t *) windowBuffer.bits;
-            for (int h = 0; h < mPlayer->viddec->get_height(); h++) {
-                memcpy(dst + h * windowBuffer.stride * 4,
-                       vOutBuffer + h * frameRGBA->linesize[0],
-                       frameRGBA->linesize[0]);
-            }
-            ANativeWindow_unlockAndPost(nativeWindow);
-        }
-    }
-    free(vOutBuffer);
-    picThread--;
-    av_frame_free(&frameRGBA);
-    on_state_change(ReleaseState::COMPLETE);
-    return;
-}
-
-//音频播放
-void playAudio() {
-    LOGD("start audio play thread");
-    if (!mPlayer->has_audio())
-        return;
-    mPlayer->wait_state(PlayerState::READY);
-    createAudioEngine();
-    createBufferQueueAudioPlayer(mPlayer->auddec->get_sample_rate(), mPlayer->auddec->get_channels());
-    audioStart();
-}
-
 void restart() {
     mPlayer->prepare_async();
     mPlayer->wait_state(PlayerState::READY);
     mPlayer->play();
-    if (!picThread) {
-        std::thread videoThread(showPic);
-        std::thread audioThread(playAudio);
-        audioThread.detach();
-        videoThread.detach();
-    }
 }
-
+bool is_in_background_listener(){
+    return is_in_background;
+}
 void listener(EasyPlayer *player,int what, int arg1, int arg2, char *msg) {
     JNIEnv *env = NULL;
     if(what==-1&&player!= nullptr){
@@ -185,10 +100,6 @@ void listener(EasyPlayer *player,int what, int arg1, int arg2, char *msg) {
     if (0 == gVm->AttachCurrentThread(&env, NULL)) {
         env->CallVoidMethod(gObj, gPostEventFromNative, what, arg1, arg2,env->NewStringUTF(msg));
         gVm->DetachCurrentThread();
-    }
-    if(what == 6 && mPlayer->state == PlayerState::STOP){
-        release_player();
-        return;
     }
 }
 
@@ -224,14 +135,14 @@ extern "C"
 void
 Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1setDataSource
         (JNIEnv *env, jobject obj, jstring path) {
-    leaktracer::MemoryTrace::GetInstance().startMonitoringAllThreads();
     mPlayer = new EasyPlayer();
     char inputStr[500] = {0};
     sprintf(inputStr, "%s", env->GetStringUTFChars(path, NULL));
     av_log_set_callback(log);
+    mPlayer->set_background_listener(is_in_background_listener);
     mPlayer->set_event_listener(listener);
+    mPlayer->set_audio_call_back(bqPlayerCallback);
     mPlayer->set_data_source(inputStr);
-    init(mPlayer);
 }
 
 
@@ -239,20 +150,14 @@ extern "C"
 void
 Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1setVideoSurface
         (JNIEnv *env, jobject obj, jobject surface) {
-    if (nativeWindow) {
-        ANativeWindow_release(nativeWindow);
-    }
-    nativeWindow = ANativeWindow_fromSurface(env, surface);
+
+    ANativeWindow *nativeWindow = ANativeWindow_fromSurface(env, surface);
     if (0 == nativeWindow) {
         LOGD("Couldn't get native window from surface.\n");
         return;
     }
-    if (mPlayer != nullptr&&mPlayer->has_video()) {
-        if (0 > ANativeWindow_setBuffersGeometry(nativeWindow, mPlayer->viddec->get_width(), mPlayer->viddec->get_height(), WINDOW_FORMAT_RGBA_8888)) {
-            LOGD("Couldn't set buffers geometry.\n");
-            ANativeWindow_release(nativeWindow);
-            return;
-        }
+    if(mPlayer != nullptr){
+        mPlayer->set_window(nativeWindow);
     }
 }
 extern "C"
@@ -275,12 +180,6 @@ Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1start
         return;
     }
     mPlayer->play();
-    if (!picThread) {
-        std::thread videoThread(showPic);
-        std::thread audioThread(playAudio);
-        audioThread.detach();
-        videoThread.detach();
-    }
 }
 
 
@@ -288,8 +187,8 @@ extern "C"
 void
 Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1pause
         (JNIEnv *env, jobject obj) {
-    mPlayer->pause();
-
+    if(mPlayer)
+        mPlayer->pause();
 }
 
 
@@ -341,32 +240,33 @@ Java_cn_jx_easyplayerlib_player_EasyMediaPlayer_seekTo
 
 }
 
-
-
-extern "C"
-void
-Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1release
-        (JNIEnv *env, jobject obj, jlong mSec) {
-    if (mPlayer != nullptr) {
-        mPlayer->stop();
-    }
-}
-
-
-
-
 extern "C"
 JNIEXPORT void JNICALL
 Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1restart(JNIEnv *env, jobject instance) {
     if (mPlayer != nullptr) {
         mPlayer->prepare();
-        if (!picThread) {
-            std::thread videoThread(showPic);
-            std::thread audioThread(playAudio);
-            audioThread.detach();
-            videoThread.detach();
-        }
         mPlayer->play();
+    }
+}
+extern "C"
+JNIEXPORT void JNICALL
+Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1release(JNIEnv *env, jobject instance) {
+
+    // TODO
+    if (mPlayer != nullptr) {
+        mPlayer->stop();
+        release_player();
+        env->CallVoidMethod(gObj, gPostEventFromNative, 6, 0, 0,env->NewStringUTF("播放停止"));
+        if(gObj){
+            env->DeleteGlobalRef(gObj);
+        }
+        gObj = nullptr;
+        if(gPostEventFromNative){
+            gOnResolutionChange = NULL;
+        }
+        if(gOnResolutionChange){
+            gOnResolutionChange = NULL;
+        }
     }
 }
 extern "C"
@@ -386,7 +286,8 @@ Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1setBackgroundState(JNIEnv *env
             return;
         }
     }
-    mPlayer->play();
+    if(!mPlayer->is_playing())
+        mPlayer->play();
 }
 extern "C"
 JNIEXPORT void JNICALL
@@ -406,6 +307,8 @@ Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1stopRecorder(JNIEnv *env, jobj
         mPlayer->stop_recorder();
     }
 }
+
+
 void event_listener(int what, int error_code, char *msg) {
     JNIEnv *env = NULL;
     if (0 == gVm->AttachCurrentThread(&env, NULL)) {
@@ -480,7 +383,6 @@ Java_cn_jx_easyplayerlib_recorder_EasyMediaRecorder__1recorderAudio(JNIEnv *env,
 extern "C"
 JNIEXPORT void JNICALL
 Java_cn_jx_easyplayerlib_recorder_EasyMediaRecorder__1release(JNIEnv *env, jobject instance) {
-
     // TODO
     if (recorder != nullptr) {
         delete (recorder);

@@ -60,7 +60,7 @@ public class TransformUtils {
    * @param height 转换后的高
    * @param filterDesc 需要添加的滤镜
    */
-  private native void transform_native(String srcFilePath,String dstFilePath,long startTime,long endTime,long duration,int width,int height,String filterDesc);
+  private native int transform_native(String srcFilePath,String dstFilePath,long startTime,long endTime,long duration,int width,int height,String filterDesc);
 
   private Handler mHandler = new Handler(new Handler.Callback() {
     @Override

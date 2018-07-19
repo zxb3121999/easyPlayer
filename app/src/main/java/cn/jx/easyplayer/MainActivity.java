@@ -87,7 +87,9 @@ public class MainActivity extends AppCompatActivity {
 
   @Override protected void onResume() {
     super.onResume();
-    videoView.onResume();
+    if(isRunning){
+      videoView.onResume();
+    }
   }
 
   @Override protected void onDestroy() {

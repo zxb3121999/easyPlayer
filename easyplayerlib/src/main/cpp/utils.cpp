@@ -37,7 +37,6 @@ int PacketQueue::put_packet(AVPacket *pkt) {
             cond.notify_one();
             break;
         } else {
-            av_log(NULL, AV_LOG_FATAL, "wait to push AVPacket.\n");
             full.wait(lock);
         }
     }
@@ -60,7 +59,6 @@ int PacketQueue::get_packet(AVPacket *pkt) {
             full.notify_one();
             return 0;
         } else {
-            av_log(NULL, AV_LOG_FATAL, "wait to get AVPacket.\n");
             cond.wait(lock);
         }
     }
@@ -134,14 +132,16 @@ size_t PacketQueue::get_queue_size() {
 std::shared_ptr<Frame> FrameQueue::get_frame() {
     std::unique_lock<std::mutex> lock(mutex);
     for (;;) {
+        if(is_stop){
+            return nullptr;
+        }
         if (queue.size() > 0) {
             auto tmp = queue.front();
             queue.pop();
             full.notify_one();
             return tmp;
-        } else {
-            empty.wait(lock);
         }
+        empty.wait(lock);
     }
 }
 
@@ -150,6 +150,8 @@ void FrameQueue::put_frame(AVFrame *frame) {
     std::unique_lock<std::mutex> lock(mutex);
 
     while (true) {
+        if(is_stop)
+            return;
         if (queue.size() < MAX_SIZE) {
             if(frame == nullptr){
                 queue.push(nullptr);
@@ -163,12 +165,10 @@ void FrameQueue::put_frame(AVFrame *frame) {
                 empty.notify_one();
             } else {
                 av_frame_free(&avFrame);
-                av_log(NULL, AV_LOG_FATAL, "copy frame failed");
             }
             return;
-        } else {
-            full.wait(lock);;
         }
+        full.wait(lock);;
     }
 
 }
@@ -196,8 +196,10 @@ void FrameQueue::flush() {
     while (queue.size() > 0) {
         auto tmp = queue.front();
         queue.pop();
-        if(tmp!= nullptr)
+        if(tmp!= nullptr){
             av_frame_free(&tmp->frame);
+        }
+
     }
     full.notify_one();
 }
