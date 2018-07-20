@@ -12,6 +12,7 @@ public:
     virtual void encode() = 0;
     virtual int init_swr() = 0;
     void loop();
+    void flush_queue();
     int flush_encoder();
     int init(AVCodecContext *ctx);
     void set_use_frame_queue(bool b){

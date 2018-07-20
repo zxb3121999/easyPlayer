@@ -27,15 +27,6 @@ EasyRecorder *recorder = nullptr;
 bool can_play_in_background = true;
 bool is_in_background = false;
 
-void release_player(){
-    delete(mPlayer);
-    mPlayer = nullptr;
-    is_in_background = false;
-    can_play_in_background = true;
-    LOGD("清理完成");
-}
-
-
 jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     gVm = vm;
     av_register_all();
@@ -100,10 +91,22 @@ void listener(EasyPlayer *player,int what, int arg1, int arg2, char *msg) {
     if (0 == gVm->AttachCurrentThread(&env, NULL)) {
         env->CallVoidMethod(gObj, gPostEventFromNative, what, arg1, arg2,env->NewStringUTF(msg));
         gVm->DetachCurrentThread();
+        if(what == 6 ||what ==-1){
+            env->DeleteGlobalRef(gObj);
+            gPostEventFromNative = NULL;
+            gOnResolutionChange = NULL;
+        }
     }
 }
 
-
+void release_player(){
+    delete(mPlayer);
+    mPlayer = nullptr;
+    is_in_background = false;
+    can_play_in_background = true;
+    listener(NULL,6,0,0,"播放停止");
+    LOGD("清理完成");
+}
 void log(void *ptr, int level, const char *fmt, va_list vl) {
     switch (level) {
         case AV_LOG_VERBOSE:
@@ -253,21 +256,13 @@ JNIEXPORT void JNICALL
 Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1release(JNIEnv *env, jobject instance) {
 
     // TODO
-    if (mPlayer != nullptr) {
-        mPlayer->stop();
-        release_player();
-        env->CallVoidMethod(gObj, gPostEventFromNative, 6, 0, 0,env->NewStringUTF("播放停止"));
-        if(gObj){
-            env->DeleteGlobalRef(gObj);
+    std::thread release([]{
+        if (mPlayer != nullptr) {
+            mPlayer->stop();
+            release_player();
         }
-        gObj = nullptr;
-        if(gPostEventFromNative){
-            gOnResolutionChange = NULL;
-        }
-        if(gOnResolutionChange){
-            gOnResolutionChange = NULL;
-        }
-    }
+    });
+    release.detach();
 }
 extern "C"
 JNIEXPORT void JNICALL
@@ -283,11 +278,10 @@ Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1setBackgroundState(JNIEnv *env
     if (!can_play_in_background) {
         if (is_in_background) {
             mPlayer->pause();
-            return;
+        }else{
+            mPlayer->play();
         }
     }
-    if(!mPlayer->is_playing())
-        mPlayer->play();
 }
 extern "C"
 JNIEXPORT void JNICALL
@@ -352,12 +346,16 @@ Java_cn_jx_easyplayerlib_recorder_EasyMediaRecorder__1startRecorder(JNIEnv *env,
 }
 extern "C"
 JNIEXPORT void JNICALL
-Java_cn_jx_easyplayerlib_recorder_EasyMediaRecorder__1stopRecorder(JNIEnv *env, jobject instance) {
+Java_cn_jx_easyplayerlib_recorder_EasyMediaRecorder__1stopRecorder(JNIEnv *env, jobject instance,jint flag) {
 
     // TODO
     if (recorder != nullptr) {
-        recorder->recorder_audio(NULL, 0);
-        recorder->recorder_img(NULL, 0);
+        if(flag == -2){//立即停止
+            recorder->stop_recorder();
+        } else{
+            recorder->recorder_audio(NULL, 0);
+            recorder->recorder_img(NULL, 0);
+        }
     }
 }
 extern "C"

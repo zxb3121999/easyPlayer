@@ -27,9 +27,10 @@ public class EasyMediaRecorder extends AbstractMediaRecorder{
     _startRecorder(path,parameters.getPreviewSize().height,parameters.getPreviewSize().width,parameters.getPreviewFrameRate(),580000);
   }
 
-  @Override public void stopRecorder() {
-    _stopRecorder();
+  @Override public void stopRecorder(int flag) {
+    _stopRecorder(flag);
   }
+
 
   @Override public void recorderVideo(byte[] data, int len) {
     _recorderVideo(data,len);
@@ -70,7 +71,7 @@ public class EasyMediaRecorder extends AbstractMediaRecorder{
 
 
   private native void _startRecorder(String path,int width,int height,int frame,int bit);
-  private native void _stopRecorder();
+  private native void _stopRecorder(int flag);
   private native void _recorderVideo(byte data[],int len);
   private native void _recorderAudio(byte data[],int len);
   private native void _release();

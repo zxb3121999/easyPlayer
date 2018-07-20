@@ -505,7 +505,7 @@ void EasyPlayer::play_video() {
             continue;
         if (ANativeWindow_lock(nativeWindow, &windowBuffer, NULL) < 0) {
             av_log(NULL,AV_LOG_FATAL,"锁定window失败.\n");
-            notify_message(MEDIA_ERROR,-10002,1,"锁定window失败y");
+            notify_message(MEDIA_ERROR,-10002,1,"锁定window失败");
         } else {
             uint8_t *dst = (uint8_t *) windowBuffer.bits;
             for (int h = 0; h < viddec->get_height(); h++) {
@@ -583,6 +583,11 @@ void EasyPlayer::stop() {
 }
 void EasyPlayer::release() {
     recorder_queue.flush();
+    event_listener = NULL;
+    callback = NULL;
+    is_in_background_listener = NULL;
+    av_log_set_callback(NULL);
+
     if(nativeWindow){
         ANativeWindow_release(nativeWindow);
         nativeWindow = NULL;
@@ -701,7 +706,10 @@ void EasyPlayer::recorder_run() {
             last_video_stream = i;
         }
     }
-    avformat_write_header(out, NULL);
+    AVDictionary *params = 0;
+    av_dict_set(&params,"movflags","faststart",0);
+    avformat_write_header(out,&params);
+    av_dict_free(&params);
     AVPacket *packet = av_packet_alloc();
     recorder = true;
 

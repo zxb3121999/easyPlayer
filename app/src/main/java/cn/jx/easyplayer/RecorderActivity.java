@@ -91,12 +91,12 @@ public class RecorderActivity extends AppCompatActivity {
   }
 
   @Override protected void onDestroy() {
-    super.onDestroy();
     if (mCamera != null) mCamera.release();
     if (isRecording) {
       isRecording = false;
-      mBackgroundHandler.sendEmptyMessage(-1);
+      mBackgroundHandler.sendEmptyMessage(IMediaRecorder.STOP_NOW);
     }
+    super.onDestroy();
   }
 
   private void initAudioRecorder() {
@@ -172,14 +172,14 @@ public class RecorderActivity extends AppCompatActivity {
           if (msg.obj != null && msg.what == 0) {
             byte[] data = (byte[]) msg.obj;
             mRecorder.recorderVideo(data, data.length);
-          } else if (msg.what == -1) {
+          } else if (msg.what == IMediaRecorder.STOP_NOW||msg.what == IMediaRecorder.STOP_WAIT_FOR_COMPLETED) {
             mBackgroundHandler.removeMessages(0);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
               mBackgroundThread.quitSafely();
             } else {
               mBackgroundThread.quit();
             }
-            mRecorder.stopRecorder();
+            mRecorder.stopRecorder(msg.what);
             mBackgroundThread = null;
           }
           return false;

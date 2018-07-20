@@ -12,7 +12,7 @@ import android.hardware.Camera;
 
 public interface IMediaRecorder {
   void startRecorder(String path,Camera.Parameters parameters);
-  void stopRecorder();
+  void stopRecorder(int stop_flag);
   void recorderVideo(byte[] data,int len);
   void recorderAudio(byte[] data,int len);
   void onVideoError(int what,String msg);
@@ -32,4 +32,6 @@ public interface IMediaRecorder {
   interface OnErrorListener{
     void onError(int errorCode,String msg);
   }
+  int STOP_NOW = -2;
+  int STOP_WAIT_FOR_COMPLETED = -1;
 }

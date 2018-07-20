@@ -250,13 +250,13 @@ public class EasyVideoView extends FrameLayout implements MediaController.MediaP
     }
   }
 
-  public void onPause() {
+  public void onActivityPause() {
     if (mMediaPlayer != null) {
       mMediaPlayer.setBackgroundState(true);
     }
   }
 
-  public void onResume() {
+  public void onActivityResume() {
     if (mMediaPlayer != null) {
       mMediaPlayer.setBackgroundState(false);
     }

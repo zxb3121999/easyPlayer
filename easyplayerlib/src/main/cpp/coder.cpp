@@ -19,8 +19,9 @@ int Encoder::init(AVCodecContext *ctx) {
 }
 
 Encoder::~Encoder() {
-    av_log(NULL,AV_LOG_FATAL,"释放编码资源frame");
-    avctx = NULL;
+    if(avctx){
+        avcodec_free_context(&avctx);
+    }
     if (frame) {
         av_frame_free(&frame);
     }
@@ -35,7 +36,6 @@ Encoder::~Encoder() {
         delete(pkt_queue);
         pkt_queue = NULL;
     }
-    av_log(NULL,AV_LOG_FATAL,"释放编码资源完成");
 }
 
 void Encoder::start_encode_thread() {
@@ -53,25 +53,34 @@ int Encoder::flush_encoder() {
     AVPacket *pkt = av_packet_alloc();
     if (!(avctx->codec->capabilities & CODEC_CAP_DELAY))
         return 0;
-    while (true) {
-        ret = avcodec_receive_packet(avctx, pkt);
-        if (ret) {
-            break;
-        }
+    while (!avcodec_receive_packet(avctx, pkt)) {
         pkt_queue->put_packet(pkt);
     }
     av_packet_free(&pkt);
     return 0;
 }
-
-void Encoder::loop() {
-    while (!is_finish || (use_frame_queue?frame_queue->get_size()>0:!data_queue.empty())) {
-        encoder_encode_frame();
+void Encoder::flush_queue() {
+    if(frame_queue){
+        frame_queue->set_stop_state(true);
+        frame_queue->flush();
     }
-    flush_encoder();
+    if(!data_queue.empty()){
+        data_queue.clear();
+    }
+    if(pkt_queue){
+        pkt_queue->set_abort(true);
+        pkt_queue->flush();
+    }
+}
+void Encoder::loop() {
+    while (encoder_encode_frame()>=0) {
+    }
+    if(!is_finish)
+        flush_encoder();
     pkt_queue->put_nullpacket();
     av_frame_free(&frame);
     delete(frame);
+    is_finish = false;
 }
 VideoEncoder::~VideoEncoder() {
     if(frame_out){
@@ -95,6 +104,7 @@ VideoEncoder::~VideoEncoder() {
         }catch (...){
             buffersink_ctx = NULL;
         }
+    av_log(NULL,AV_LOG_FATAL,"释放视频编码资源完成");
 }
 int VideoEncoder::init_swr() {
     return 0;
@@ -192,8 +202,10 @@ void VideoEncoder::encode() {
         avfilter_graph_free(&filter_graph);
         filter_graph = NULL;
     }
-    av_frame_free(&frame_out);
-    delete(frame_out);
+    if(frame_out){
+        av_frame_free(&frame_out);
+        frame_out = NULL;
+    }
 }
 
 int VideoEncoder::encoder_encode_frame() {
@@ -261,7 +273,7 @@ int VideoEncoder::encoder_encode_frame() {
         } else if (ret < 0) {
             break;
         }
-    } while (ret != 0);
+    } while (ret);
     av_packet_free(&pkt);
     delete (data);
     return 0;
@@ -291,6 +303,7 @@ void VideoEncoder::filter(uint8_t *picture_buf) {
 AudioEncoder::~AudioEncoder() {
     if(swr)
         swr_free(&swr);
+    av_log(NULL,AV_LOG_FATAL,"释放音频编码资源完成");
 }
 int AudioEncoder::init_swr() {
     swr = swr_alloc();
@@ -319,6 +332,8 @@ void AudioEncoder::encode() {
     uint8_t *audio_buf = (uint8_t *) av_malloc(audioSize);
     avcodec_fill_audio_frame(frame, avctx->channels, avctx->sample_fmt, (const uint8_t *) audio_buf, audioSize, 0);;
     loop();
+    if(audio_buf)
+        delete(audio_buf);
     av_log(NULL,AV_LOG_FATAL,"写入空音频数据");
     swr_free(&swr);
     delete(swr);
@@ -329,9 +344,9 @@ int AudioEncoder::encoder_encode_frame() {
     uint8_t *outs[2]={0};
     uint8_t *data = nullptr;
     AVPacket *pkt = NULL;
-
+    av_frame_unref(frame);
     if(!use_frame_queue) {
-        data = *data_queue.wait_and_pop();
+        data = *data_queue.wait_and_pop().get();
         if (data == nullptr) {
             goto fail;
         }
@@ -344,7 +359,6 @@ int AudioEncoder::encoder_encode_frame() {
         frame->data[0] = outs[0];
         frame->data[1] = outs[1];
     }else{
-        av_frame_unref(frame);
         auto av_frame = frame_queue->get_frame();
         if (av_frame == nullptr) {//文件结束
             goto fail;

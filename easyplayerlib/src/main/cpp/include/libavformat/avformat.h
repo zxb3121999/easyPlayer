@@ -2610,9 +2610,7 @@ int av_write_trailer(AVFormatContext *s);
  * @param mime_type if non-NULL checks if mime_type matches with the
  * MIME type of the registered formats
  */
-AVOutputFormat *av_guess_format(const char *short_name,
-                                const char *filename,
-                                const char *mime_type);
+AVOutputFormat *av_guess_format(const char short_name[4]);
 
 /**
  * Guess the codec ID based upon muxer and filename.

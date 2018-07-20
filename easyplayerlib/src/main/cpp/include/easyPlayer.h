@@ -295,6 +295,14 @@ public:
         event_listener = cb;
     }
     void stop_recorder(){
+        if(videnc){
+            videnc->is_finish = true;
+            videnc->flush_queue();
+        }
+        if(audenc){
+            audenc->is_finish = true;
+            audenc->flush_queue();
+        }
     }
     void set_width(int w){
         width = w;
@@ -312,6 +320,11 @@ public:
     AudioEncoder *audenc = nullptr;
     VideoEncoder *videnc = nullptr;
 private:
+    void notify_message(int state,int error_code,char *errMsg){
+        if(event_listener){
+            event_listener(state,error_code,errMsg);
+        }
+    }
     RecorderState state = RecorderState ::UNKNOWN;
     void release();
     void write();
