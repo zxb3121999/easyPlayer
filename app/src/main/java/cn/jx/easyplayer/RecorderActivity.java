@@ -191,11 +191,8 @@ public class RecorderActivity extends AppCompatActivity {
       tv.setText("开始");
       isRecording = false;
       mBackgroundHandler.sendEmptyMessage(-1);
-      time = System.currentTimeMillis() - time;
-      System.out.println("录制时间：" + time);
     } else {
       initAudioRecorder();
-      time = System.currentTimeMillis();
       //mRecorder.startRecorder("rtmp://192.168.232.22:1935/live/12345", mParameters);
       mRecorder.startRecorder(Environment.getExternalStorageDirectory().getAbsolutePath() + "/ffmpeg/test.mp4", mParameters);
       isRecording = true;
@@ -278,47 +275,4 @@ public class RecorderActivity extends AppCompatActivity {
       }
     }
   };
-  //private Mat mRgba,mRgbaT,mRgbaF;
-  //@Override public void onCameraViewStarted(int width, int height) {
-  //  mRgba = new Mat(height, width, CvType.CV_8UC4);
-  //  this.mRgbaF = new Mat(height, width, CvType.CV_8UC4);
-  //  this.mRgbaT = new Mat(height, width, CvType.CV_8UC4);
-  //}
-  //
-  //@Override public void onCameraViewStopped() {
-  //
-  //}
-  //
-  //@Override public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-  //  //mRgba = inputFrame.rgba();
-  //  //Core.transpose(inputFrame.rgba(), mRgbaT);
-  //  //Imgproc.resize(this.mRgbaT, this.mRgbaF, this.mRgbaF.size(), 0.0D, 0.0D, 0);
-  //  //Core.flip(this.mRgbaF, this.mRgba, 0);
-  //  mRgba = inputFrame.rgba();
-  //  Mat rotateMat = Imgproc.getRotationMatrix2D(new Point(mRgba.rows()/2,mRgba.cols()/2), 90, 1);
-  //  Imgproc.warpAffine(mRgba, mRgbaT, rotateMat, mRgbaT.size());
-  //  return mRgbaT;
-  //  //return mRgba;
-  //}
-  //
-  //private BaseLoaderCallback mLoaderCallback = new BaseLoaderCallback(this) {
-  //  @Override public void onManagerConnected(int status) {
-  //    switch (status) {
-  //      case LoaderCallbackInterface.SUCCESS:
-  //        mCameraView.enableView();
-  //        mCameraView.setOnTouchListener(RecorderActivity.this);
-  //        break;
-  //      default:
-  //        super.onManagerConnected(status);
-  //    }
-  //  }
-  //
-  //  @Override public void onPackageInstall(int operation, InstallCallbackInterface callback) {
-  //    super.onPackageInstall(operation, callback);
-  //  }
-  //};
-  //
-  //@Override public boolean onTouch(View v, MotionEvent event) {
-  //  return false;
-  //}
 }

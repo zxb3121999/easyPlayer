@@ -67,8 +67,6 @@ void EasyTransform::set_file_name( const char *input_file,const char *save_file)
  * 初始化ffmpeg
  */
 void EasyTransform::init() {
-    av_register_all();
-    avfilter_register_all();
     avformat_network_init();
     id = _thread_id++;
     std::thread thread(&EasyTransform::init_context,this);
@@ -361,7 +359,7 @@ int EasyTransform::stream_out_component_open(int stream_index) {
     }
     stream->time_base = in->streams[stream_index]->time_base;
     if (out->oformat->flags & AVFMT_GLOBALHEADER)
-        stream->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
+        stream->codec->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     switch(stream->codec->codec_type){
         case AVMEDIA_TYPE_AUDIO:
             if((ret = avcodec_open2(stream->codec,codec,&param))<0){

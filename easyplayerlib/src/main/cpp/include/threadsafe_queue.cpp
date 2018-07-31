@@ -15,11 +15,10 @@
 /**
  * 一个安全的队列
  */
-template<typename T>
 class threadsafe_queue {
 private:
     mutable std::mutex mut;
-    std::queue<T> data_queue;
+    std::queue<std::shared_ptr<uint8_t *>> data_queue;
     std::condition_variable data_cond;
     std::condition_variable data_full;
     int max_size = -1;
@@ -38,29 +37,45 @@ public:
         data_queue = other.data_queue;
     }
 
-    void push(T new_value)//入队操作
+    void push(uint8_t * new_value)//入队操作
     {
         std::unique_lock<std::mutex> lk(mut);
         if(max_size>0&&data_queue.size()>=max_size){
             data_full.wait(lk);
         }
         if(!stop){
-            data_queue.push(new_value);
+            if(new_value){
+                auto tmp = std::make_shared<uint8_t *>(new_value);
+                data_queue.push(tmp);
+            }else{
+                data_queue.push(nullptr);
+            }
+        } else{
+            free(new_value);
         }
         data_cond.notify_one();
     }
 
-    std::shared_ptr<T> wait_and_pop() {
+    std::shared_ptr<uint8_t *> wait_and_pop() {
         std::unique_lock<std::mutex> lk(mut);
         data_cond.wait(lk, [this] { return !data_queue.empty()||stop; });
-        std::shared_ptr<T> res(std::make_shared<T>(stop? nullptr:data_queue.front()));
+        auto result = data_queue.front();
         if(!stop){
             data_queue.pop();
             data_full.notify_one();
         }
-        return res;
+        return result;
     }
-
+    void wait_and_pop(uint8_t **value)//直到有元素可以删除为止
+    {
+        std::unique_lock<std::mutex> lk(mut);
+        data_cond.wait(lk, [this] { return !data_queue.empty()||stop;; });
+        if(stop){
+            *value = NULL;
+        } else
+            value = data_queue.front().get();
+        data_queue.pop();
+    }
     bool empty() const {
         return data_queue.empty();
     }
@@ -72,9 +87,11 @@ public:
         data_cond.notify_all();
         std::unique_lock<std::mutex> lk(mut);
         while(!data_queue.empty()){
-            std::shared_ptr<T> res(std::make_shared<T>(data_queue.front()));
+            auto tmp = data_queue.front();
             data_queue.pop();
-            free(res.get());
+            if(tmp){
+                free(*tmp.get());
+            }
         }
         data_full.notify_one();
     }

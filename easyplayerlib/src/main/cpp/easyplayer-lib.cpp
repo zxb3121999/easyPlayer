@@ -1,6 +1,8 @@
 #include <string>
 #include <android/log.h>
 #include "easyPlayer.h"
+#include "jni.h"
+#include "3rd/include/MemoryTrace.hpp"
 
 #define LOGD(format, ...)  __android_log_print(ANDROID_LOG_INFO,  "easyplayer-lib", format, ##__VA_ARGS__)
 
@@ -29,7 +31,6 @@ bool is_in_background = false;
 
 jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     gVm = vm;
-    av_register_all();
     return JNI_VERSION_1_4;
 }
 void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context) {
@@ -129,6 +130,7 @@ void log(void *ptr, int level, const char *fmt, va_list vl) {
             __android_log_vprint(ANDROID_LOG_SILENT, "native-lib", fmt, vl);
             break;
         default:
+//            __android_log_vprint(ANDROID_LOG_DEBUG, "native-lib", fmt, vl);
             break;
     }
 }
@@ -177,12 +179,14 @@ extern "C"
 void
 Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1start
         (JNIEnv *env, jobject obj) {
-    if (mPlayer->state == PlayerState::COMPLETED) {
-        std::thread restartThread(restart);
-        restartThread.detach();
-        return;
+    if(mPlayer){
+        if (mPlayer->state == PlayerState::COMPLETED) {
+            std::thread restartThread(restart);
+            restartThread.detach();
+            return;
+        }
+        mPlayer->play();
     }
-    mPlayer->play();
 }
 
 
@@ -309,6 +313,7 @@ void event_listener(int what, int error_code, char *msg) {
         env->CallVoidMethod(gRecorder, gPostEventFromNativeRecorder, what, error_code, env->NewStringUTF(msg));
         gVm->DetachCurrentThread();
     }
+    av_log(NULL,AV_LOG_FATAL,"listener完成");
 }
 
 
@@ -331,7 +336,6 @@ Java_cn_jx_easyplayerlib_recorder_EasyMediaRecorder__1startRecorder(JNIEnv *env,
         delete (recorder);
     }
     av_log_set_callback(log);
-    av_log(NULL, AV_LOG_FATAL, "test log");
     recorder = new EasyRecorder;
     char outputStr[500] = {0};
     sprintf(outputStr, "%s", env->GetStringUTFChars(path_, NULL));
@@ -364,7 +368,7 @@ Java_cn_jx_easyplayerlib_recorder_EasyMediaRecorder__1recorderVideo(JNIEnv *env,
     jbyte *data = env->GetByteArrayElements(data_, NULL);
 
     // TODO
-    if (recorder != nullptr)
+    if (recorder != nullptr&&recorder->get_recorder_state()!=RecorderState::COMPLETED)
         recorder->recorder_img((uint8_t *) data, len);
     env->ReleaseByteArrayElements(data_, data, 0);
 }
@@ -374,7 +378,7 @@ Java_cn_jx_easyplayerlib_recorder_EasyMediaRecorder__1recorderAudio(JNIEnv *env,
     jbyte *data = env->GetByteArrayElements(data_, NULL);
 
     // TODO
-    if (recorder != nullptr)
+    if (recorder != nullptr&&recorder->get_recorder_state()!=RecorderState::COMPLETED)
         recorder->recorder_audio((uint8_t *) data, len);
     env->ReleaseByteArrayElements(data_, data, 0);
 }
@@ -385,10 +389,14 @@ Java_cn_jx_easyplayerlib_recorder_EasyMediaRecorder__1release(JNIEnv *env, jobje
     if (recorder != nullptr) {
         delete (recorder);
         recorder = nullptr;
+    }
+    av_log(NULL,AV_LOG_FATAL,"清除gRecorder");
+    if(gRecorder){
         gPostEventFromNativeRecorder = 0;
         env->DeleteGlobalRef(gRecorder);
         gRecorder = NULL;
     }
+    av_log(NULL,AV_LOG_FATAL,"清除gRecorder完成");
 }
 extern "C"
 JNIEXPORT jint JNICALL

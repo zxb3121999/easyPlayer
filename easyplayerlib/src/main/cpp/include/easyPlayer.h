@@ -319,6 +319,15 @@ public:
     AVFormatContext *out = NULL;
     AudioEncoder *audenc = nullptr;
     VideoEncoder *videnc = nullptr;
+    int get_audio_buf_size(){
+        return this->audio_buf_size;
+    }
+    std::shared_ptr<uint8_t *> get_video_data(){
+        return this->video_data_queue.wait_and_pop();
+    }
+    std::shared_ptr<uint8_t *> get_audio_data(){
+        return this->audio_data_queue.wait_and_pop();
+    }
 private:
     void notify_message(int state,int error_code,char *errMsg){
         if(event_listener){
@@ -341,6 +350,8 @@ private:
     bool init_context();
     int video_stream = -1;
     int audio_stream = -1;
+    int audio_buf_size = 0;
+    threadsafe_queue video_data_queue,audio_data_queue;
     int stream_component_open(int stream_index);
     void (*event_listener)(int,int,char *);
     static const int RECORDER_STATE_READY = 1;

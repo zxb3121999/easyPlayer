@@ -4,16 +4,15 @@ apply plugin: 'com.android.library'
 android {
     compileSdkVersion 26
     buildToolsVersion "26.0.2"
-
     defaultConfig {
         minSdkVersion 16
-        targetSdkVersion 24
+        targetSdkVersion 23
         versionCode 1
         versionName "1.0"
 
         testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
         ndk {
-            abiFilters 'armeabi'
+            abiFilters 'armeabi','armeabi-v7a'
         }
         externalNativeBuild {
             cmake {
@@ -44,7 +43,7 @@ dependencies {
     compile 'com.android.support:support-v4:26.1.0'
     compile 'com.android.support.constraint:constraint-layout:1.0.2'
     testCompile 'junit:junit:4.12'
-    compile project(':opencv')
+//    compile project(':opencv')
 }
 
 apply from: 'bintray.gradle'

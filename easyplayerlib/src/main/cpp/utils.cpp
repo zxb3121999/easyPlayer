@@ -88,7 +88,9 @@ void PacketQueue::flush() {
     while (queue.size() > 0) {
         AVPacket *tmp = queue.front();
         queue.pop();
+        av_packet_unref(tmp);
         av_packet_free(&tmp);
+        tmp = NULL;
     }
     duration = 0;
     full.notify_one();

@@ -8,7 +8,7 @@
 #include "threadsafe_queue.cpp"
 class Encoder{
 public:
-    virtual int encoder_encode_frame() = 0;
+    virtual int encoder_encode_frame(AVPacket *pkt) = 0;
     virtual void encode() = 0;
     virtual int init_swr() = 0;
     void loop();
@@ -21,22 +21,35 @@ public:
     void start_encode_thread();
     int buf_size = 0;
     PacketQueue *pkt_queue = NULL;
-    threadsafe_queue<uint8_t *> data_queue;
     FrameQueue *frame_queue = NULL;
     bool is_finish = false;
     AVCodecContext *avctx = NULL;
     AVRational t;
     ~Encoder();
     int64_t start_time;
+    void set_get_data_fun(std::function<std::shared_ptr<uint8_t *>()> cb){
+        get_data_fun = cb;
+    }
+    void set_buf_size_listener(std::function<int()> cb){
+        get_buf_size = cb;
+    }
 protected:
+    std::shared_ptr<uint8_t *> get_data(){
+        if(get_data_fun){
+            return get_data_fun();
+        }
+        return nullptr;
+    }
     bool use_frame_queue= false;
     AVFrame *frame = NULL;
     int frame_count = 0;
+    std::function<int()> get_buf_size;
+    std::function<std::shared_ptr<uint8_t *>()> get_data_fun;
 };
 class VideoEncoder:public Encoder{
 public:
     ~VideoEncoder();
-    virtual int encoder_encode_frame() override ;
+    virtual int encoder_encode_frame(AVPacket *pkt) override ;
     virtual void encode() override ;
     virtual int init_swr() override ;
     void filter(uint8_t *picture_buf);
@@ -52,7 +65,7 @@ class AudioEncoder:public Encoder{
 public:
     ~AudioEncoder();
     int init_swr() override ;
-    virtual int encoder_encode_frame() override ;
+    virtual int encoder_encode_frame(AVPacket *pkt) override ;
     virtual void encode() override ;
 
 private:

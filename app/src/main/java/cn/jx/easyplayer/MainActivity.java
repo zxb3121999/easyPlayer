@@ -17,6 +17,9 @@ import cn.jx.easyplayerlib.view.EasyVideoView;
 import java.io.File;
 
 public class MainActivity extends AppCompatActivity {
+  static {
+    System.loadLibrary("player-lib");
+  }
   private static final String TAG = MainActivity.class.getSimpleName();
   EasyVideoView videoView;
   boolean isRecorder = false;

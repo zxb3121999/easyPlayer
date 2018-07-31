@@ -5,6 +5,7 @@ extern "C"{
 #include "libavutil/channel_layout.h"
 }
 #include "easyPlayer.h"
+
 const char *filter_descr = "movie=/storage/emulated/0/ffmpeg/icon.png[wm];[in][wm]overlay=20:20[out]";
 EasyRecorder::~EasyRecorder() {
     release();
@@ -24,7 +25,6 @@ void EasyRecorder::on_state_change(RecorderState state) {
 }
 
 void EasyRecorder::release() {
-    avfilter_uninit();
     if(file_name){
         delete(file_name);
     }
@@ -41,6 +41,9 @@ void EasyRecorder::release() {
     if(audenc){
         delete(audenc);
     }
+    video_data_queue.clear();
+    audio_data_queue.clear();
+    av_log(NULL,AV_LOG_FATAL,"release完成");
 }
 
 /**/void EasyRecorder::set_file_save_path(const std::string output_file_name) {
@@ -53,7 +56,6 @@ void EasyRecorder::release() {
 
 void EasyRecorder::prepare() {
     if (!out) {
-        avfilter_register_all();
         avformat_network_init();
     }
     on_state_change(RecorderState::UNKNOWN);
@@ -171,7 +173,6 @@ void EasyRecorder::write() {
     if(aacbsfc)
         av_bitstream_filter_close(aacbsfc);
     av_write_trailer(out);
-    av_log(NULL,AV_LOG_FATAL,"录制完成");
     result:
     av_packet_unref(packet);
     av_packet_free(&packet);
@@ -186,8 +187,10 @@ void EasyRecorder::write() {
     if (out &&  out->pb)
         avio_close(out->pb);
     avformat_free_context(out);
+    on_state_change(RecorderState::COMPLETED);
     out = NULL;
     notify_message(RECORDER_STATE_COMPLETED,0,"录制完成");
+    av_log(NULL,AV_LOG_FATAL,"录制完成");
 }
 
 int EasyRecorder::stream_component_open(int stream_index) {
@@ -234,7 +237,7 @@ int EasyRecorder::stream_component_open(int stream_index) {
             break;
     }
     if (out->oformat->flags & AVFMT_GLOBALHEADER)
-        avctx_out->flags |= CODEC_FLAG_GLOBAL_HEADER;
+        avctx_out->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
     codec_out = avcodec_find_encoder(parameters->codec_id);
     if (!codec_out) {
         av_log(NULL, AV_LOG_FATAL, "can not find codec");
@@ -254,6 +257,8 @@ int EasyRecorder::stream_component_open(int stream_index) {
             delete(videnc);
         videnc = new VideoEncoder;
         videnc->init(avctx_out);
+        auto fun = std::bind(&EasyRecorder::get_video_data,this);
+        videnc->set_get_data_fun(fun);
         if(out_stream->time_base.num>0){
             videnc->init_filter((char *) filter_descr, out_stream->time_base);
         } else
@@ -267,6 +272,10 @@ int EasyRecorder::stream_component_open(int stream_index) {
             avcodec_free_context(&avctx_out);
             return ERROR_INIT_SWR_CONTEXT;
         }
+        auto fun = std::bind(&EasyRecorder::get_audio_data,this);
+        auto buf_size = std::bind(&EasyRecorder::get_audio_buf_size,this);
+        audenc->set_buf_size_listener(buf_size);
+        audenc->set_get_data_fun(fun);
         audenc->start_encode_thread();
     }
     return 0;
@@ -277,28 +286,34 @@ int EasyRecorder::stream_component_open(int stream_index) {
     av_dict_free(&param);
     return  ret;
 }
-
+static int img_count =0;
 void EasyRecorder::recorder_img(uint8_t *data,int len) {
     wait_state(RecorderState::READY);
+    img_count++;
     if (!data) {
-        videnc->data_queue.push(nullptr);
+        video_data_queue.push(nullptr);
+        av_log(NULL,AV_LOG_FATAL,"写入%d个图片",img_count);
         return;
     }
     uint8_t *_data = (uint8_t *) malloc(len);
     memcpy(_data, data, len);
-    videnc->data_queue.push(_data);
+    video_data_queue.push(_data);
+//    free(_data);
 }
-
+static int audio_count = 0;
 void EasyRecorder::recorder_audio(uint8_t *data, int len) {
     wait_state(RecorderState::READY);
+    audio_count++;
     if (!data) {
-        audenc->data_queue.push(nullptr);
+        audio_data_queue.push(nullptr);
+        av_log(NULL,AV_LOG_FATAL,"写入%d个音频",audio_count);
         return;
     }
-    if (audenc->buf_size == 0) {
-        audenc->buf_size = len;
+    if (audio_buf_size == 0) {
+        audio_buf_size = len;
     }
     uint8_t *_data = (uint8_t *) malloc(len);
     memcpy(_data, data, len);
-    audenc->data_queue.push(_data);
+    audio_data_queue.push(_data);
+//    free(_data);
 }

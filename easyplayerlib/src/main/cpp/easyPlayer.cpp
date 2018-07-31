@@ -22,9 +22,7 @@ void EasyPlayer::read() {
             notify_message(MEDIA_ERROR,ERROR_OPEN_FILE,-1,"打开视频文件失败");
             return;
         }
-        av_log(NULL,AV_LOG_FATAL,"find stream info");
         err = avformat_find_stream_info(ic, NULL);
-        av_log(NULL,AV_LOG_FATAL,"find stream info end");
         if (err < 0) {
             av_log(NULL, AV_LOG_WARNING, "%s: could not find codec parameters\n", filename);
             notify_message(MEDIA_ERROR,ERROR_FIND_STREAM_INFO,-1,"查找视频流信息失败");
@@ -769,7 +767,7 @@ int EasyPlayer::recorder_compenent_open(int index) {
             avctx_out->qmax = 51;
             avctx_out->time_base = ic->streams[index]->time_base;
             if (out->oformat->flags & AVFMT_GLOBALHEADER)
-                avctx_out->flags |= CODEC_FLAG_GLOBAL_HEADER;
+                avctx_out->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
             if (avctx_out->codec_id == AV_CODEC_ID_H264) {
                 avctx_out->me_pre_cmp = 1;
                 avctx_out->me_range = 16;

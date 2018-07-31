@@ -13,9 +13,7 @@ import cn.jx.easyplayerlib.util.EasyLog;
  */
 
 public class EasyMediaPlayer extends AbstractMediaPlayer {
-    static {
-        System.loadLibrary("player-lib");
-    }
+
     private static final String TAG = EasyMediaPlayer.class.getSimpleName();
 
     private static final int MEDIA_NOP = 0; // interface test message

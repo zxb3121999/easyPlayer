@@ -26,6 +26,7 @@ extern "C"{
 #include <queue>
 #include <mutex>
 #include <condition_variable>
+#include <stdio.h>
 class PacketQueue {
 public:
     int put_packet(AVPacket *pkt);
