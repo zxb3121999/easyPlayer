@@ -27,14 +27,14 @@ public:
     AVRational t;
     ~Encoder();
     int64_t start_time;
-    void set_get_data_fun(std::function<std::shared_ptr<uint8_t *>()> cb){
+    void set_get_data_fun(std::function<uint8_t *()> cb){
         get_data_fun = cb;
     }
     void set_buf_size_listener(std::function<int()> cb){
         get_buf_size = cb;
     }
 protected:
-    std::shared_ptr<uint8_t *> get_data(){
+    uint8_t* get_data(){
         if(get_data_fun){
             return get_data_fun();
         }
@@ -44,7 +44,7 @@ protected:
     AVFrame *frame = NULL;
     int frame_count = 0;
     std::function<int()> get_buf_size;
-    std::function<std::shared_ptr<uint8_t *>()> get_data_fun;
+    std::function<uint8_t *()> get_data_fun;
 };
 class VideoEncoder:public Encoder{
 public:
@@ -69,7 +69,7 @@ public:
     virtual void encode() override ;
 
 private:
-    struct SwrContext *swr;
+    struct SwrContext *swr = NULL;
 };
 class Decoder {
 public:

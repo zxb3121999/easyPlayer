@@ -26,20 +26,22 @@ void EasyRecorder::on_state_change(RecorderState state) {
 
 void EasyRecorder::release() {
     if(file_name){
-        delete(file_name);
+       av_free(file_name);
     }
-    if (out!=NULL) {
+    if (out) {
         if(out->pb){
             avio_close(out->pb);
         }
         avformat_free_context(out);
+        out = NULL;
     }
-    out = NULL;
     if(videnc){
         delete(videnc);
+        videnc = NULL;
     }
     if(audenc){
         delete(audenc);
+        audenc = NULL;
     }
     video_data_queue.clear();
     audio_data_queue.clear();
@@ -90,11 +92,13 @@ void EasyRecorder::write() {
         }
     }
     int i;
+    av_log(NULL,AV_LOG_FATAL,"初始化视频");
     err = stream_component_open(AVMEDIA_TYPE_VIDEO);
     if (err < 0) {
         notify_message(RECORDER_STATE_ERROR,err,"打开视频编码器失败");
         goto result;
     }
+    av_log(NULL,AV_LOG_FATAL,"初始化音频");
     err = stream_component_open(AVMEDIA_TYPE_AUDIO);
     if ( err < 0) {
         notify_message(RECORDER_STATE_ERROR,err,"打开音频编码器失败");
@@ -109,11 +113,12 @@ void EasyRecorder::write() {
         }
     }
     if(strcmp("mp4",out->oformat->name)==0){
-        h264bsfc = av_bitstream_filter_init("h264_mp4toannexb");
+        h264bsfc = av_bitstream_filter_init("h264_mp4toannexb");;
         aacbsfc = av_bitstream_filter_init("aac_adtstoasc");
         av_dict_set(&param,"movflags","faststart",0);
     }
     err = avformat_write_header(out, &param);
+    av_log(NULL,AV_LOG_FATAL,"write header");
     av_dict_free(&param);
     if(err < 0){
         notify_message(RECORDER_STATE_ERROR,ERROR_WRITE_HEADER,"写入视频头文件出错");
@@ -176,19 +181,7 @@ void EasyRecorder::write() {
     result:
     av_packet_unref(packet);
     av_packet_free(&packet);
-    if(audenc){
-        delete(audenc);
-        audenc = NULL;
-    }
-    if(videnc){
-        delete(videnc);
-        videnc = NULL;
-    }
-    if (out &&  out->pb)
-        avio_close(out->pb);
-    avformat_free_context(out);
     on_state_change(RecorderState::COMPLETED);
-    out = NULL;
     notify_message(RECORDER_STATE_COMPLETED,0,"录制完成");
     av_log(NULL,AV_LOG_FATAL,"录制完成");
 }
@@ -217,7 +210,6 @@ int EasyRecorder::stream_component_open(int stream_index) {
             parameters->width = width;
             parameters->height = height;
             parameters->format = AV_PIX_FMT_YUV420P;
-//            parameters->bit_rate = bit_rate;
             parameters->codec_type = AVMEDIA_TYPE_VIDEO;
             avcodec_parameters_to_context(avctx_out, parameters);
             avctx_out->time_base = (AVRational) {1, frame_rate};
@@ -229,8 +221,6 @@ int EasyRecorder::stream_component_open(int stream_index) {
             avctx_out->me_pre_cmp = 1;
             av_opt_set(avctx_out->priv_data, "preset", "superfast", 0);
             av_opt_set(avctx_out->priv_data, "tune", "zerolatency", 0);
-//            av_dict_set(&param, "tune", "zero-latency", 0);
-//            av_dict_set(&param, "preset", "superfast", 0);
             av_dict_set_int(&param, "qp", 18,0);
             break;
         default:
@@ -249,12 +239,17 @@ int EasyRecorder::stream_component_open(int stream_index) {
         ret == AVMEDIA_TYPE_AUDIO ? ERROR_OPEN_AUDIO_ENCODER :ERROR_OPEN_VIDEO_ENCODER;
         goto error;
     }
-    av_dict_free(&param);
+    if(param){
+        av_log(NULL,AV_LOG_FATAL,"删除param");
+        av_dict_free(&param);
+    }
     if (stream_index == AVMEDIA_TYPE_VIDEO) {
         parameters->extradata = avctx_out->extradata;
         parameters->extradata_size = avctx_out->extradata_size;
-        if(videnc)
+        if(videnc){
+            av_log(NULL,AV_LOG_FATAL,"删除videnc");
             delete(videnc);
+        }
         videnc = new VideoEncoder;
         videnc->init(avctx_out);
         auto fun = std::bind(&EasyRecorder::get_video_data,this);
@@ -265,10 +260,13 @@ int EasyRecorder::stream_component_open(int stream_index) {
             videnc->init_filter((char *) filter_descr, avctx_out->time_base);
         videnc->start_encode_thread();
     } else {
-        if(audenc)
+        if(audenc){
+            av_log(NULL,AV_LOG_FATAL,"删除audenc");
             delete(audenc);
+        }
         audenc = new AudioEncoder;
         if (audenc->init(avctx_out) != 0) {
+            av_log(NULL,AV_LOG_FATAL,"删除audenc context");
             avcodec_free_context(&avctx_out);
             return ERROR_INIT_SWR_CONTEXT;
         }
@@ -281,32 +279,31 @@ int EasyRecorder::stream_component_open(int stream_index) {
     return 0;
     error:
     if(avctx_out){
+        av_log(NULL,AV_LOG_FATAL,"删除context");
         avcodec_free_context(&avctx_out);
     }
-    av_dict_free(&param);
+    if(param){
+        av_log(NULL,AV_LOG_FATAL,"删除 error param");
+        av_dict_free(&param);
+    }
     return  ret;
 }
-static int img_count =0;
 void EasyRecorder::recorder_img(uint8_t *data,int len) {
     wait_state(RecorderState::READY);
-    img_count++;
     if (!data) {
+        video_stop = true;
         video_data_queue.push(nullptr);
-        av_log(NULL,AV_LOG_FATAL,"写入%d个图片",img_count);
         return;
     }
     uint8_t *_data = (uint8_t *) malloc(len);
     memcpy(_data, data, len);
     video_data_queue.push(_data);
-//    free(_data);
 }
-static int audio_count = 0;
 void EasyRecorder::recorder_audio(uint8_t *data, int len) {
     wait_state(RecorderState::READY);
-    audio_count++;
     if (!data) {
+        audio_stop = true;
         audio_data_queue.push(nullptr);
-        av_log(NULL,AV_LOG_FATAL,"写入%d个音频",audio_count);
         return;
     }
     if (audio_buf_size == 0) {
@@ -315,5 +312,4 @@ void EasyRecorder::recorder_audio(uint8_t *data, int len) {
     uint8_t *_data = (uint8_t *) malloc(len);
     memcpy(_data, data, len);
     audio_data_queue.push(_data);
-//    free(_data);
 }

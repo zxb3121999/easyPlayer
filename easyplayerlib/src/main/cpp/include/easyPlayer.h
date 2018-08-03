@@ -18,6 +18,7 @@
 #include <jni.h>
 #include <pthread.h>
 #include <assert.h>
+#include <sstream>
 
 #define  ERROR_OK 0
 #define  ERROR_MALLOC_CONTEXT -3001
@@ -79,7 +80,7 @@ public:
     void stop();
     void release();
     bool is_playing() {
-        return state == PlayerState::PLAYING && !paused;
+        return state == PlayerState::PLAYING||state == PlayerState::COMPLETED&& !paused;
     }
     void play() {
         if (state == PlayerState::READY||state == PlayerState ::BUFFERING||state == PlayerState::COMPLETED) {
@@ -288,6 +289,12 @@ public:
     void on_state_change(RecorderState state);
     void wait_state(RecorderState state);
     void recorder_audio(uint8_t *data,int len);
+    bool is_audio_stop(){
+        return audio_stop;
+    }
+    bool is_video_stop(){
+        return video_stop;
+    }
     RecorderState get_recorder_state(){
         return state;
     }
@@ -295,6 +302,7 @@ public:
         event_listener = cb;
     }
     void stop_recorder(){
+        audio_stop = video_stop = true;
         if(videnc){
             videnc->is_finish = true;
             videnc->flush_queue();
@@ -322,10 +330,10 @@ public:
     int get_audio_buf_size(){
         return this->audio_buf_size;
     }
-    std::shared_ptr<uint8_t *> get_video_data(){
+    uint8_t* get_video_data(){
         return this->video_data_queue.wait_and_pop();
     }
-    std::shared_ptr<uint8_t *> get_audio_data(){
+    uint8_t* get_audio_data(){
         return this->audio_data_queue.wait_and_pop();
     }
 private:
@@ -337,8 +345,7 @@ private:
     RecorderState state = RecorderState ::UNKNOWN;
     void release();
     void write();
-    void do_write();
-    char *file_name = nullptr;
+    char *file_name = NULL;
     int width = 0;
     int height = 0;
     std::mutex mutex;
@@ -347,10 +354,11 @@ private:
     int bit_rate = 40000;
     int img_frame_count =0;
     int audio_frame_count = 0;
-    bool init_context();
     int video_stream = -1;
     int audio_stream = -1;
     int audio_buf_size = 0;
+    bool audio_stop = false;
+    bool video_stop = false;
     threadsafe_queue video_data_queue,audio_data_queue;
     int stream_component_open(int stream_index);
     void (*event_listener)(int,int,char *);

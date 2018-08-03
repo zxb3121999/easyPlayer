@@ -123,20 +123,20 @@ void EasyTransform::read() {
 void EasyTransform::read_audio() {
     double frame_ts = 0;
     while(!audenc->is_finish){
-        auto frame = auddec->frame_queue->get_frame();
+        AVFrame *frame = av_frame_alloc();
+        auddec->frame_queue->get_frame(frame);
         if (frame == nullptr) {//文件结束
             audenc->is_finish = true;
             return;
         }
         if(start_time!=AV_NOPTS_VALUE&&start_time>0&&frame_ts<start_time){
-            frame_ts = frame->frame->pkt_pts * av_q2d(in->streams[audio_index]->time_base);
+            frame_ts = frame->pkt_pts * av_q2d(in->streams[audio_index]->time_base);
             if(frame_ts<((double) start_time / 1000000)){
-                av_frame_free(&frame->frame);
+                av_frame_free(&frame);
                 continue;
             }
         }
-        audenc->frame_queue->put_frame(frame->frame);
-        av_frame_free(&frame->frame);
+        audenc->frame_queue->put_frame(frame);
     }
 }
 void EasyTransform::read_video() {
@@ -153,26 +153,26 @@ void EasyTransform::read_video() {
         av_image_fill_arrays(temp->data, temp->linesize, vOutBuffer, videnc->avctx->pix_fmt, videnc->avctx->width, videnc->avctx->height, 1);
     }
     while(!videnc->is_finish){
-        auto frame = viddec->frame_queue->get_frame();
+        AVFrame *frame = av_frame_alloc();
+        viddec->frame_queue->get_frame(frame);
         if (frame == nullptr) {//文件结束
             videnc->is_finish = true;
             break;
         }
         if(start_time!=AV_NOPTS_VALUE&&start_time>0&&frame_ts<start_time){
-            frame_ts = av_frame_get_best_effort_timestamp(frame->frame) * av_q2d(in->streams[video_index]->time_base);
+            frame_ts = av_frame_get_best_effort_timestamp(frame) * av_q2d(in->streams[video_index]->time_base);
             if(frame_ts<((double) start_time / 1000000)){
-                av_frame_free(&frame->frame);
+                av_frame_free(&frame);
                 continue;
             }
         }
         if(width>0||height>0){
-            sws_scale(img_convert_ctx, (const uint8_t *const *) frame->frame->data, frame->frame->linesize, 0,viddec->avctx->height,
+            sws_scale(img_convert_ctx, (const uint8_t *const *) frame->data, frame->linesize, 0,viddec->avctx->height,
                       temp->data, temp->linesize);
             videnc->frame_queue->put_frame(temp);
         } else{
-            videnc->frame_queue->put_frame(frame->frame);
+            videnc->frame_queue->put_frame(frame);
         }
-        av_frame_free(&frame->frame);
     }
     if(temp){
         av_frame_free(&temp);

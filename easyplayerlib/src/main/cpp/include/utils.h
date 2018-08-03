@@ -54,28 +54,11 @@ private:
 };
 
 
-struct Frame {
-    Frame(AVFrame *f) : frame(f){
-
-    }
-    AVFrame *frame;
-    int serial;
-    double pts;           /* presentation timestamp for the frame */
-    double duration;      /* estimated duration of the frame */
-    int64_t pos;          /* byte position of the frame in the input file */
-    int allocated;
-    int width;
-    int height;
-    int format;
-    AVRational sar;
-    int uploaded;
-};
-
 class FrameQueue {
 public:
     void put_frame(AVFrame *frame);
     int put_null_frame();
-    std::shared_ptr<Frame> get_frame();
+    int get_frame(AVFrame *frame);
     size_t get_size();
     int64_t frame_queue_last_pos();
     void flush();
@@ -88,7 +71,7 @@ public:
     }
 private:
     bool is_stop = false;
-    std::queue<std::shared_ptr<Frame>> queue;
+    std::queue<AVFrame*> queue;
     std::mutex mutex;
     std::condition_variable empty;
     std::condition_variable full;

@@ -18,7 +18,7 @@
 class threadsafe_queue {
 private:
     mutable std::mutex mut;
-    std::queue<std::shared_ptr<uint8_t *>> data_queue;
+    std::queue<uint8_t *> data_queue;
     std::condition_variable data_cond;
     std::condition_variable data_full;
     int max_size = -1;
@@ -45,8 +45,7 @@ public:
         }
         if(!stop){
             if(new_value){
-                auto tmp = std::make_shared<uint8_t *>(new_value);
-                data_queue.push(tmp);
+                data_queue.push(new_value);
             }else{
                 data_queue.push(nullptr);
             }
@@ -56,10 +55,10 @@ public:
         data_cond.notify_one();
     }
 
-    std::shared_ptr<uint8_t *> wait_and_pop() {
+    uint8_t* wait_and_pop() {
         std::unique_lock<std::mutex> lk(mut);
         data_cond.wait(lk, [this] { return !data_queue.empty()||stop; });
-        auto result = data_queue.front();
+        uint8_t *result = data_queue.front();
         if(!stop){
             data_queue.pop();
             data_full.notify_one();
@@ -73,7 +72,7 @@ public:
         if(stop){
             *value = NULL;
         } else
-            value = data_queue.front().get();
+            *value = data_queue.front();
         data_queue.pop();
     }
     bool empty() const {
@@ -90,7 +89,7 @@ public:
             auto tmp = data_queue.front();
             data_queue.pop();
             if(tmp){
-                free(*tmp.get());
+                free(tmp);
             }
         }
         data_full.notify_one();

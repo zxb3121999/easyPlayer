@@ -131,17 +131,24 @@ size_t PacketQueue::get_queue_size() {
 }
 
 //从FrameQueue中获取AVFrame数据
-std::shared_ptr<Frame> FrameQueue::get_frame() {
+int FrameQueue::get_frame(AVFrame *frame) {
     std::unique_lock<std::mutex> lock(mutex);
     for (;;) {
         if(is_stop){
-            return nullptr;
+            av_frame_free(&frame);
+            return -1;
         }
         if (queue.size() > 0) {
-            auto tmp = queue.front();
+            AVFrame *tmp = queue.front();
             queue.pop();
+            if(tmp){
+                av_frame_ref(frame,tmp);
+                av_frame_free(&tmp);
+            } else{
+                av_frame_free(&frame);
+            }
             full.notify_one();
-            return tmp;
+            return 0;
         }
         empty.wait(lock);
     }
@@ -150,24 +157,12 @@ std::shared_ptr<Frame> FrameQueue::get_frame() {
 //将AVFrame压入FrameQueue
 void FrameQueue::put_frame(AVFrame *frame) {
     std::unique_lock<std::mutex> lock(mutex);
-
     while (true) {
         if(is_stop)
             return;
         if (queue.size() < MAX_SIZE) {
-            if(frame == nullptr){
-                queue.push(nullptr);
-                empty.notify_one();
-                return;
-            }
-            AVFrame *avFrame = av_frame_alloc();
-            if (av_frame_ref(avFrame, frame) == 0) {
-                auto m_frame = std::make_shared<Frame>(avFrame);
-                queue.push(m_frame);
-                empty.notify_one();
-            } else {
-                av_frame_free(&avFrame);
-            }
+            queue.push(frame);
+            empty.notify_one();
             return;
         }
         full.wait(lock);;
@@ -179,7 +174,7 @@ void FrameQueue::put_frame(AVFrame *frame) {
 //获取最后一个的位置
 int64_t FrameQueue::frame_queue_last_pos() {
     auto frame = queue.back();
-    return frame->frame->pkt_pos;
+    return frame->pkt_pos;
 }
 
 
@@ -199,7 +194,7 @@ void FrameQueue::flush() {
         auto tmp = queue.front();
         queue.pop();
         if(tmp!= nullptr){
-            av_frame_free(&tmp->frame);
+            av_frame_free(&tmp);
         }
 
     }

@@ -1,14 +1,5 @@
 package org.opencv.android;
 
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
-import java.nio.FloatBuffer;
-
-import javax.microedition.khronos.egl.EGLConfig;
-import javax.microedition.khronos.opengles.GL10;
-
-import org.opencv.android.CameraGLSurfaceView.CameraTextureListener;
-
 import android.annotation.TargetApi;
 import android.graphics.SurfaceTexture;
 import android.opengl.GLES11Ext;
@@ -16,6 +7,12 @@ import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.util.Log;
 import android.view.View;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.FloatBuffer;
+import javax.microedition.khronos.egl.EGLConfig;
+import javax.microedition.khronos.opengles.GL10;
+import org.opencv.android.CameraGLSurfaceView.CameraTextureListener;
 
 @TargetApi(15)
 public abstract class CameraGLRendererBase implements GLSurfaceView.Renderer, SurfaceTexture.OnFrameAvailableListener {
@@ -222,7 +219,7 @@ public abstract class CameraGLRendererBase implements GLSurfaceView.Renderer, Su
         int[] status = new int[1];
         GLES20.glGetShaderiv(vshader, GLES20.GL_COMPILE_STATUS, status, 0);
         if (status[0] == 0) {
-            Log.e("CameraGLRendererBase", "Could not compile vertex shader: "+GLES20.glGetShaderInfoLog(vshader));
+            Log.e("CameraGLRendererBase", "Could not implementation vertex shader: "+GLES20.glGetShaderInfoLog(vshader));
             GLES20.glDeleteShader(vshader);
             vshader = 0;
             return 0;
@@ -233,7 +230,7 @@ public abstract class CameraGLRendererBase implements GLSurfaceView.Renderer, Su
         GLES20.glCompileShader(fshader);
         GLES20.glGetShaderiv(fshader, GLES20.GL_COMPILE_STATUS, status, 0);
         if (status[0] == 0) {
-            Log.e("CameraGLRendererBase", "Could not compile fragment shader:"+GLES20.glGetShaderInfoLog(fshader));
+            Log.e("CameraGLRendererBase", "Could not implementation fragment shader:"+GLES20.glGetShaderInfoLog(fshader));
             GLES20.glDeleteShader(vshader);
             GLES20.glDeleteShader(fshader);
             fshader = 0;

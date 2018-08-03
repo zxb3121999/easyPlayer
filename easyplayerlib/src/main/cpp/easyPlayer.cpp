@@ -67,6 +67,7 @@ bool EasyPlayer::init_context() {
                 auddec->frame_queue->flush();
                 auddec->start_decode_thread();
             }
+            audio_clock = 0;
             on_state_change(PlayerState::READY);
             return true;
         }
@@ -251,7 +252,8 @@ bool EasyPlayer::has_audio() {
 //获取可显示的图片
 bool EasyPlayer::get_img_frame(AVFrame *frame) {
     if (!frame || !viddec) return false;
-    auto av_frame = viddec->frame_queue->get_frame();
+    AVFrame *av_frame = av_frame_alloc();
+    viddec->frame_queue->get_frame(av_frame);
     if (av_frame == nullptr) {//文件结束
         if (recorder) {
             stop_recorder();
@@ -261,13 +263,13 @@ bool EasyPlayer::get_img_frame(AVFrame *frame) {
     if (!recorder) {
         recorder_queue.remove_one();
     }
-    sws_scale(img_convert_ctx, (const uint8_t *const *) av_frame->frame->data, av_frame->frame->linesize, 0, viddec->avctx->height,
+    sws_scale(img_convert_ctx, (const uint8_t *const *) av_frame->data, av_frame->linesize, 0, viddec->avctx->height,
               frame->data, frame->linesize);
-    double timestamp = av_frame_get_best_effort_timestamp(av_frame->frame) * av_q2d(ic->streams[video_stream]->time_base);
+    double timestamp = av_frame_get_best_effort_timestamp(av_frame) * av_q2d(ic->streams[video_stream]->time_base);
     if (audio_clock&&!audio_complete&& timestamp > audio_clock) {//保证视频同音频同步
         usleep((unsigned long) ((timestamp - audio_clock) * 1000000));
     }
-    av_frame_free(&av_frame->frame);
+    av_frame_free(&av_frame);
     return true;
 }
 
@@ -275,8 +277,9 @@ bool EasyPlayer::get_img_frame(AVFrame *frame) {
 //获取音频数据
 bool EasyPlayer::get_aud_buffer(int &nextSize, uint8_t *outputBuffer) {
     if (!outputBuffer||!auddec) return false;
-    auto av_frame = auddec->frame_queue->get_frame();
-    if (av_frame == nullptr) {
+    AVFrame *frame = av_frame_alloc();
+    auddec->frame_queue->get_frame(frame);
+    if (!frame) {
         nextSize = 0;
         if (recorder) {
             stop_recorder();
@@ -287,16 +290,14 @@ bool EasyPlayer::get_aud_buffer(int &nextSize, uint8_t *outputBuffer) {
         recorder_queue.remove_one();
     }
     if (av_sample_fmt_is_planar(auddec->avctx->sample_fmt)) {
-        nextSize = av_samples_get_buffer_size(av_frame->frame->linesize, auddec->avctx->channels, av_frame->frame->nb_samples, auddec->avctx->sample_fmt, 1);
+        nextSize = av_samples_get_buffer_size(frame->linesize, auddec->avctx->channels, frame->nb_samples, auddec->avctx->sample_fmt, 1);
     } else {
         nextSize = av_samples_get_buffer_size(NULL, auddec->avctx->channels, auddec->avctx->frame_size, auddec->avctx->sample_fmt, 1);
     }
-    int ret = swr_convert(swr_ctx, &outputBuffer, av_frame->frame->nb_samples,
-                          (uint8_t const **) (av_frame->frame->extended_data),
-                          av_frame->frame->nb_samples);
+    int ret = swr_convert(swr_ctx, &outputBuffer, frame->nb_samples, (uint8_t const **) (frame->extended_data), frame->nb_samples);
     nextSize = ret * auddec->avctx->channels * av_get_bytes_per_sample(AV_SAMPLE_FMT_S16);
-    audio_clock = av_frame->frame->pkt_pts * av_q2d(ic->streams[audio_stream]->time_base);
-    av_frame_free(&av_frame->frame);
+    audio_clock = frame->pkt_pts * av_q2d(ic->streams[audio_stream]->time_base);
+    av_frame_free(&frame);
     return ret >= 0;
 }
 
@@ -526,8 +527,12 @@ void EasyPlayer::play_audio() {
     if(state == PlayerState::STOP||state == PlayerState::COMPLETED){
         return;
     }
-    createAudioEngine();
-    createBufferQueueAudioPlayer(auddec->get_sample_rate(), auddec->get_channels());
+    if(!file_changed&&bqPlayerObject){
+        (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
+    } else{
+        createAudioEngine();
+        createBufferQueueAudioPlayer(auddec->get_sample_rate(), auddec->get_channels());
+    }
     set_play_state(true, false);
     callback(bqPlayerBufferQueue, NULL);
     wait_for_audio_completed();

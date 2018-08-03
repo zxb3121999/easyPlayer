@@ -31,7 +31,7 @@
 
 
 /////////////////////////////////////////////////////////////
-// Following MACROS are available at compile time:
+// Following MACROS are available at implementation time:
 //
 // START_TRACING_FROM_PROCESS_START - starts monitoring memory
 //              allocations from the start of BeatBox process.
@@ -323,7 +323,7 @@ inline void MemoryTrace::stopAllMonitoring(void)
 //#else
 //	void *pFrame;
 //	// NOTE: we can't use "for" loop, __builtin_* functions
-//	// require the number to be known at compile time
+//	// require the number to be known at implementation time
 //	arr[iIndex++] = (                  (pFrame = __builtin_frame_address(0)) != NULL) ? __builtin_return_address(0) : NULL; if (iIndex == ALLOCATION_STACK_DEPTH) return;
 //	arr[iIndex++] = (pFrame != NULL && (pFrame = __builtin_frame_address(1)) != NULL) ? __builtin_return_address(1) : NULL; if (iIndex == ALLOCATION_STACK_DEPTH) return;
 //	arr[iIndex++] = (pFrame != NULL && (pFrame = __builtin_frame_address(2)) != NULL) ? __builtin_return_address(2) : NULL; if (iIndex == ALLOCATION_STACK_DEPTH) return;

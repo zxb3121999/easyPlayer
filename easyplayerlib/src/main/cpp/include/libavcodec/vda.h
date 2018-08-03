@@ -33,7 +33,7 @@
 
 #include <stdint.h>
 
-// emmintrin.h is unable to compile with -std=c99 -Werror=missing-prototypes
+// emmintrin.h is unable to implementation with -std=c99 -Werror=missing-prototypes
 // http://openradar.appspot.com/8026390
 #undef __GNUC_STDC_INLINE__
 
