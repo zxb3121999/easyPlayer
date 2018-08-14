@@ -131,24 +131,17 @@ size_t PacketQueue::get_queue_size() {
 }
 
 //从FrameQueue中获取AVFrame数据
-int FrameQueue::get_frame(AVFrame *frame) {
+AVFrame* FrameQueue::get_frame() {
     std::unique_lock<std::mutex> lock(mutex);
     for (;;) {
         if(is_stop){
-            av_frame_free(&frame);
-            return -1;
+            return NULL;
         }
         if (queue.size() > 0) {
             AVFrame *tmp = queue.front();
             queue.pop();
-            if(tmp){
-                av_frame_ref(frame,tmp);
-                av_frame_free(&tmp);
-            } else{
-                av_frame_free(&frame);
-            }
             full.notify_one();
-            return 0;
+            return tmp;
         }
         empty.wait(lock);
     }
@@ -158,8 +151,11 @@ int FrameQueue::get_frame(AVFrame *frame) {
 void FrameQueue::put_frame(AVFrame *frame) {
     std::unique_lock<std::mutex> lock(mutex);
     while (true) {
-        if(is_stop)
+        if(is_stop){
+            if(frame)
+                av_frame_free(&frame);
             return;
+        }
         if (queue.size() < MAX_SIZE) {
             queue.push(frame);
             empty.notify_one();
@@ -184,7 +180,7 @@ size_t FrameQueue::get_size() {
 }
 
 int FrameQueue::put_null_frame() {
-    put_frame(nullptr);
+    put_frame(NULL);
     return 0;
 }
 

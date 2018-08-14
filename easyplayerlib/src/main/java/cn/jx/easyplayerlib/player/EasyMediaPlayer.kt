@@ -41,7 +41,6 @@ class EasyMediaPlayer : AbstractMediaPlayer() {
     }
     true
   })
-
   override val isPlaying: Boolean
     external get
 
@@ -261,6 +260,5 @@ class EasyMediaPlayer : AbstractMediaPlayer() {
     private val MEDIA_ERROR = -1
     private val MEDIA_INFO = 200
   }
-
 
 }

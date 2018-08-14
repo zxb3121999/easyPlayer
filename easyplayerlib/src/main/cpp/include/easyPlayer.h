@@ -80,15 +80,22 @@ public:
     void stop();
     void release();
     bool is_playing() {
-        return state == PlayerState::PLAYING||state == PlayerState::COMPLETED&& !paused;
+        return (!video_complete||!audio_complete)&& !paused;
     }
-    void play() {
-        if (state == PlayerState::READY||state == PlayerState ::BUFFERING||state == PlayerState::COMPLETED) {
+    void resume(){
+        if (state >= PlayerState::READY) {
             std::unique_lock<std::mutex> lock(mutex);
             state = PlayerState::PLAYING;
             paused = false;
             pause_condition.notify_all();
+            if(bqPlayerPlay&&!audio_complete){
+                (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
+            }
+            play_when_ready = true;
         }
+    }
+    void play() {
+        resume();
         if(audio_complete&&has_audio()){
             std::thread play_audio(&EasyPlayer::play_audio,this);
             play_audio.detach();
@@ -97,15 +104,18 @@ public:
             std::thread play_video(&EasyPlayer::play_video,this);
             play_video.detach();
         }
-        play_when_ready = true;
+
     }
     void pause() {
         av_log(NULL, AV_LOG_VERBOSE, "pause called,current state %d\n", state);
-        if (state == PlayerState::PLAYING) {
+        if (state >= PlayerState::PLAYING&&state<PlayerState::COMPLETED) {
             std::unique_lock<std::mutex> lock(mutex);
             paused = true;
             pause_condition.notify_all();
             state = PlayerState::READY;
+            if(bqPlayerPlay){
+                (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PAUSED);
+            }
         }
 
     }
@@ -113,15 +123,22 @@ public:
         return paused;
     }
     void set_window(ANativeWindow *window){
-        if(nativeWindow){
-            ANativeWindow_release(nativeWindow);
-        }
-        nativeWindow = window;
-        if(state == PlayerState::PLAYING&&has_video()){
-            if (0 > ANativeWindow_setBuffersGeometry(nativeWindow, viddec->get_width(), viddec->get_height(), WINDOW_FORMAT_RGBA_8888)) {
+        if(window){
+            if(nativeWindow){
                 ANativeWindow_release(nativeWindow);
-                return;
             }
+            nativeWindow = window;
+            if(has_video()&&!video_complete){
+                if (0 > ANativeWindow_setBuffersGeometry(nativeWindow, viddec->get_width(), viddec->get_height(), WINDOW_FORMAT_RGBA_8888)) {
+                    ANativeWindow_release(nativeWindow);
+                    return;
+                }
+                window_inited = true;
+            }
+        } else{
+            window_inited = false;
+            ANativeWindow_release(nativeWindow);
+            nativeWindow = nullptr;
         }
     }
     void set_play_state(bool is_audio, bool state){
@@ -130,7 +147,6 @@ public:
         } else{
             video_complete = state;
         }
-
         if(audio_complete&&video_complete){
             if(this->state != PlayerState::STOP){
                 on_state_change(PlayerState::COMPLETED);
@@ -154,9 +170,6 @@ public:
     void set_event_listener(void (*cb)(EasyPlayer *player,int, int, int,char *)) {
         event_listener = cb;
     }
-    void set_background_listener(bool (*cb)()){
-        is_in_background_listener = cb;
-    }
     void recorder_run();
     void start_recorder(const std::string save_filename);
     void stop_recorder(){
@@ -164,6 +177,18 @@ public:
             std::unique_lock<std::mutex> lock(recorder_mutex);
             recorder = false;
             recorder_condition.notify_all();
+        }
+    }
+    void set_can_play_in_background(bool can_play){
+        can_play_in_background = can_play;
+    }
+    void set_background_sate(bool is_in_background){
+        this->is_in_background = is_in_background;
+        if(!can_play_in_background){
+            if(is_in_background)
+                pause();
+            else
+                resume();
         }
     }
     bool is_recordering(){
@@ -187,7 +212,9 @@ private:
             event_listener(this,state,error_code,ffmpeg_code,err_msg);
         }
     }
+
     ANativeWindow *nativeWindow = NULL;
+    bool window_inited = false;
     void play_video();
     void play_audio();
     void read();
@@ -202,7 +229,6 @@ private:
     bool play_when_ready = false;
     bool file_changed = false;
     void (*event_listener)(EasyPlayer *,int, int, int,char *);
-    bool (*is_in_background_listener)();
     struct SwsContext *img_convert_ctx = NULL;
 
     double audio_clock = 0;
@@ -213,6 +239,9 @@ private:
 
     bool audio_complete = true;
     bool video_complete = true;
+    bool read_complete = true;
+    bool can_play_in_background = true;
+    bool is_in_background = false;
     int64_t start_time = AV_NOPTS_VALUE;
     int64_t duration = AV_NOPTS_VALUE;
     std::mutex mutex;
@@ -304,11 +333,9 @@ public:
     void stop_recorder(){
         audio_stop = video_stop = true;
         if(videnc){
-            videnc->is_finish = true;
             videnc->flush_queue();
         }
         if(audenc){
-            audenc->is_finish = true;
             audenc->flush_queue();
         }
     }
@@ -398,6 +425,7 @@ private:
     static const int STATE_PAUSE = 3;
     static const int STATE_COMPLETED = 4;
     static const int STATE_ERROR = -1;
+    static const int STATE_PROGRESS= 5;
     void notify_message(int state,int error_code,int ffmpeg_code,char *err_msg){
         if(event_listener!= nullptr){
             event_listener(this,state,error_code,ffmpeg_code,err_msg);

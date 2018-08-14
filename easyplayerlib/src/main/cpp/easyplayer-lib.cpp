@@ -19,7 +19,6 @@ static const int MEDIA_SET_VIDEO_SIZE = 5;
 static const int MEDIA_TIMED_TEXT = 99;
 static const int MEDIA_ERROR = 100;
 static const int MEDIA_INFO = 200;
-
 jmethodID gOnResolutionChange = NULL;
 jmethodID gPostEventFromNative = NULL;
 jmethodID gPostEventFromNativeRecorder = NULL;
@@ -28,7 +27,8 @@ EasyPlayer *mPlayer = nullptr;
 EasyRecorder *recorder = nullptr;
 bool can_play_in_background = true;
 bool is_in_background = false;
-
+jobject _surface;
+void release_player();
 jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     gVm = vm;
     return JNI_VERSION_1_6;
@@ -80,26 +80,27 @@ void restart() {
     mPlayer->wait_state(PlayerState::READY);
     mPlayer->play();
 }
-bool is_in_background_listener(){
-    return is_in_background;
-}
 void listener(EasyPlayer *player,int what, int arg1, int arg2, char *msg) {
     JNIEnv *env = NULL;
     if(what==-1&&player!= nullptr){
-        delete(player);
-        mPlayer = nullptr;
+        std::thread release([]{
+            if (mPlayer != nullptr) {
+                mPlayer->stop();
+                release_player();
+            }
+        });
+        release.detach();
     }
     if (0 == gVm->AttachCurrentThread(&env, NULL)) {
         env->CallVoidMethod(gObj, gPostEventFromNative, what, arg1, arg2,env->NewStringUTF(msg));
         gVm->DetachCurrentThread();
-        if(what == 6 ||what ==-1){
+        if(what == 6){
             env->DeleteGlobalRef(gObj);
             gPostEventFromNative = NULL;
             gOnResolutionChange = NULL;
         }
     }
 }
-
 void release_player(){
     delete(mPlayer);
     mPlayer = nullptr;
@@ -108,6 +109,7 @@ void release_player(){
     listener(NULL,6,0,0,"播放停止");
     LOGD("清理完成");
 }
+
 void log(void *ptr, int level, const char *fmt, va_list vl) {
     switch (level) {
         case AV_LOG_VERBOSE:
@@ -135,7 +137,6 @@ void log(void *ptr, int level, const char *fmt, va_list vl) {
     }
 }
 
-
 extern "C"
 void
 Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1setDataSource
@@ -144,7 +145,6 @@ Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1setDataSource
     char inputStr[500] = {0};
     sprintf(inputStr, "%s", env->GetStringUTFChars(path, NULL));
     av_log_set_callback(log);
-    mPlayer->set_background_listener(is_in_background_listener);
     mPlayer->set_event_listener(listener);
     mPlayer->set_audio_call_back(bqPlayerCallback);
     mPlayer->set_data_source(inputStr);
@@ -155,7 +155,6 @@ extern "C"
 void
 Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1setVideoSurface
         (JNIEnv *env, jobject obj, jobject surface) {
-
     ANativeWindow *nativeWindow = ANativeWindow_fromSurface(env, surface);
     if (0 == nativeWindow) {
         LOGD("Couldn't get native window from surface.\n");
@@ -163,6 +162,16 @@ Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1setVideoSurface
     }
     if(mPlayer != nullptr){
         mPlayer->set_window(nativeWindow);
+    } else{
+        ANativeWindow_release(nativeWindow);
+    }
+}
+extern "C"
+void
+Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1destorySurface
+        (JNIEnv *env, jobject obj) {
+    if(mPlayer != nullptr){
+        mPlayer->set_window(nullptr);
     }
 }
 extern "C"
@@ -271,20 +280,15 @@ Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1release(JNIEnv *env, jobject i
 extern "C"
 JNIEXPORT void JNICALL
 Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1canPlayBackground(JNIEnv *env, jobject instance, jboolean canPlay) {
-    can_play_in_background = canPlay;
+    if(mPlayer!= nullptr){
+        mPlayer->set_can_play_in_background(canPlay);
+    }
 }
 extern "C"
 JNIEXPORT void JNICALL
 Java_cn_jx_easyplayerlib_player_EasyMediaPlayer__1setBackgroundState(JNIEnv *env, jobject instance, jboolean isBackground) {
-    is_in_background = isBackground;
-    if (mPlayer == nullptr)
-        return;
-    if (!can_play_in_background) {
-        if (is_in_background) {
-            mPlayer->pause();
-        }else{
-            mPlayer->play();
-        }
+    if(mPlayer!= nullptr){
+        mPlayer->set_background_sate(isBackground);
     }
 }
 extern "C"

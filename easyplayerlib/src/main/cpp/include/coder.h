@@ -22,7 +22,6 @@ public:
     int buf_size = 0;
     PacketQueue *pkt_queue = NULL;
     FrameQueue *frame_queue = NULL;
-    bool is_finish = false;
     AVCodecContext *avctx = NULL;
     AVRational t;
     ~Encoder();
@@ -64,7 +63,7 @@ private:
 class AudioEncoder:public Encoder{
 public:
     ~AudioEncoder();
-    int init_swr() override ;
+    virtual int init_swr() override ;
     virtual int encoder_encode_frame(AVPacket *pkt) override ;
     virtual void encode() override ;
 
@@ -73,8 +72,8 @@ private:
 };
 class Decoder {
 public:
-    virtual int decoder_decode_frame() = 0;
-    virtual void decode() = 0;
+    int decoder_decode_frame();
+    void decode();
     void init(AVCodecContext *ctx);
     void start_decode_thread();
     void flush();
@@ -101,16 +100,12 @@ protected:
 
 class VideoDecoder : public Decoder {
 public:
-    virtual int decoder_decode_frame() override ;
-    virtual void decode() override ;
     int get_width();
     int get_height();
 };
 
 class AudioDecoder : public Decoder {
 public:
-    virtual int decoder_decode_frame() override ;
-    virtual void decode() override ;
     int get_channels();
     int get_sample_rate();
 private:

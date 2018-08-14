@@ -85,9 +85,7 @@ void EasyPlayer::do_play() {
     recorder_queue.set_abort(0);
     abort_request = 0;
     on_state_change(PlayerState::BUFFERING);
-    if(play_when_ready){
-        play();
-    }
+    read_complete = false;
     while (true) {
         if (abort_request){
             if (video_stream >= 0) {
@@ -156,6 +154,8 @@ void EasyPlayer::do_play() {
     av_packet_free(&recorder);
     av_packet_free(&pkt);
     av_log(NULL,AV_LOG_FATAL,"av_read_frame完成");
+    read_complete = true;
+    stop_condition.notify_all();
 }
 
 bool EasyPlayer::is_realtime() {
@@ -252,8 +252,7 @@ bool EasyPlayer::has_audio() {
 //获取可显示的图片
 bool EasyPlayer::get_img_frame(AVFrame *frame) {
     if (!frame || !viddec) return false;
-    AVFrame *av_frame = av_frame_alloc();
-    viddec->frame_queue->get_frame(av_frame);
+    AVFrame *av_frame = viddec->frame_queue->get_frame();
     if (av_frame == nullptr) {//文件结束
         if (recorder) {
             stop_recorder();
@@ -277,8 +276,7 @@ bool EasyPlayer::get_img_frame(AVFrame *frame) {
 //获取音频数据
 bool EasyPlayer::get_aud_buffer(int &nextSize, uint8_t *outputBuffer) {
     if (!outputBuffer||!auddec) return false;
-    AVFrame *frame = av_frame_alloc();
-    auddec->frame_queue->get_frame(frame);
+    AVFrame *frame = auddec->frame_queue->get_frame();
     if (!frame) {
         nextSize = 0;
         if (recorder) {
@@ -478,52 +476,63 @@ void EasyPlayer::release_sles() {
 /*****************open sles end***************************/
 //
 void EasyPlayer::play_video() {
+    wait_state(PlayerState::READY);
     if(!has_video()||!nativeWindow)
         return;
-    wait_state(PlayerState::READY);
+    ANativeWindow_acquire(nativeWindow);
     if(state == PlayerState::STOP||state == PlayerState::COMPLETED){
+        set_window(NULL);
         return;
     }
     if (0 > ANativeWindow_setBuffersGeometry(nativeWindow,viddec->get_width(),viddec->get_height(), WINDOW_FORMAT_RGBA_8888)) {
-        av_log(NULL,AV_LOG_FATAL,"Couldn't set buffers geometry.\n");
-        notify_message(MEDIA_ERROR,-10001,1,"Couldn't set buffers geometry");
-        ANativeWindow_release(nativeWindow);
-        return;
+            av_log(NULL,AV_LOG_FATAL,"Couldn't set buffers geometry.\n");
+            notify_message(MEDIA_ERROR,-10001,1,"Couldn't set buffers geometry");
+            set_window(NULL);
+            return;
     }
+    window_inited = true;
     AVFrame *frameRGBA = av_frame_alloc();
     int numBytes = av_image_get_buffer_size(AV_PIX_FMT_RGBA, viddec->get_width(), viddec->get_height(), 1);
     uint8_t *vOutBuffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
     av_image_fill_arrays(frameRGBA->data, frameRGBA->linesize, vOutBuffer, AV_PIX_FMT_RGBA,viddec->get_width(), viddec->get_height(), 1);
-    ANativeWindow_Buffer windowBuffer;
+    ANativeWindow_Buffer *windowBuffer = new ANativeWindow_Buffer;
+    av_log(NULL,AV_LOG_FATAL,"start play video");
     set_play_state(false, false);
     while (get_img_frame(frameRGBA)) {
         if (get_paused()) {
             wait_paused();
         }
-        if (is_in_background_listener&&is_in_background_listener())
+        if (is_in_background || !window_inited){
             continue;
-        if (ANativeWindow_lock(nativeWindow, &windowBuffer, NULL) < 0) {
+        }
+        if (ANativeWindow_lock(nativeWindow, windowBuffer, NULL) < 0) {
             av_log(NULL,AV_LOG_FATAL,"锁定window失败.\n");
             notify_message(MEDIA_ERROR,-10002,1,"锁定window失败");
+            break;
         } else {
-            uint8_t *dst = (uint8_t *) windowBuffer.bits;
+            uint8_t *dst = (uint8_t *) windowBuffer->bits;
             for (int h = 0; h < viddec->get_height(); h++) {
-                memcpy(dst + h * windowBuffer.stride * 4,
+                memcpy(dst + h * windowBuffer->stride * 4,
                        vOutBuffer + h * frameRGBA->linesize[0],
                        frameRGBA->linesize[0]);
             }
             ANativeWindow_unlockAndPost(nativeWindow);
         }
     }
+    if(windowBuffer){
+        free(windowBuffer);
+    }
     free(vOutBuffer);
     av_frame_free(&frameRGBA);
+    wait_for_audio_completed();
     set_play_state(false, true);
+    av_log(NULL,AV_LOG_FATAL,"end play video");
     return;
 }
 void EasyPlayer::play_audio() {
+    wait_state(PlayerState::READY);
     if(!has_audio())
         return;
-    wait_state(PlayerState::READY);
     if(state == PlayerState::STOP||state == PlayerState::COMPLETED){
         return;
     }
@@ -536,6 +545,7 @@ void EasyPlayer::play_audio() {
     set_play_state(true, false);
     callback(bqPlayerBufferQueue, NULL);
     wait_for_audio_completed();
+    usleep(10);
     set_play_state(true,true);
 }
 void EasyPlayer::wait_state(PlayerState need_state) {
@@ -559,36 +569,38 @@ EasyPlayer::~EasyPlayer() {
 }
 void EasyPlayer::stop() {
     if(state >= PlayerState::READY){
-        PlayerState oldState = state;
+        PlayerState old_state = state;
         on_state_change(PlayerState::STOP);
         abort_request = 1;
         if(is_recordering()){
             stop_recorder();
+        } else{
+            recorder_queue.set_abort(1);
+            recorder_queue.flush();
         }
-        if(oldState <= PlayerState::BUFFERING){
+        if(old_state <= PlayerState::BUFFERING){
             if(viddec)
                 viddec->flush();
             if(auddec)
                 auddec->flush();
         }else{
-            if(oldState == PlayerState::BUFFERING_COMPLETED){
+            if(old_state == PlayerState::BUFFERING_COMPLETED){
                 if(viddec)
                     viddec->flush();
                 if(auddec)
                     auddec->flush();
             }
-            std::unique_lock<std::mutex> lock(stop_mutex);
-            stop_condition.wait(lock,[this] {
-                return video_complete&&audio_complete&&!recorder;
-            });
         }
+        std::unique_lock<std::mutex> lock(stop_mutex);
+        stop_condition.wait(lock,[this] {
+            return read_complete&&video_complete&&audio_complete&&!recorder;
+        });
     }
 }
 void EasyPlayer::release() {
     recorder_queue.flush();
     event_listener = NULL;
     callback = NULL;
-    is_in_background_listener = NULL;
     av_log_set_callback(NULL);
 
     if(nativeWindow){

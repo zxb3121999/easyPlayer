@@ -19,9 +19,9 @@ class LauncherActivity : AppCompatActivity() {
   }
   private var listener:OnClickListener = OnClickListener {
     when(it.id){
-      R.id.play->startActivity(Intent(this,MainActivity::class.java))
-      R.id.recorder->startActivity(Intent(this,RecorderActivity::class.java))
-      R.id.transform->startActivity(Intent(this,MainActivity::class.java))
+      R.id.play->startActivity(Intent(this@LauncherActivity,MainActivity::class.java))
+      R.id.recorder->startActivity(Intent(this@LauncherActivity,RecorderActivity::class.java))
+      R.id.transform->startActivity(Intent(this@LauncherActivity,TransformActivity::class.java))
     }
   }
 }

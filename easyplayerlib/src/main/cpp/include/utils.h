@@ -58,7 +58,7 @@ class FrameQueue {
 public:
     void put_frame(AVFrame *frame);
     int put_null_frame();
-    int get_frame(AVFrame *frame);
+    AVFrame* get_frame();
     size_t get_size();
     int64_t frame_queue_last_pos();
     void flush();

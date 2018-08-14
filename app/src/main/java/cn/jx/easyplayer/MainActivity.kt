@@ -9,11 +9,8 @@ import android.os.Environment
 import android.support.v4.app.ActivityCompat
 import android.support.v7.app.AppCompatActivity
 import android.view.KeyEvent
-import android.view.View
-import cn.jx.easyplayerlib.transform.TransformUtils
-import cn.jx.easyplayerlib.util.RawAssetsUtil
 import kotlinx.android.synthetic.main.activity_main.easy_video_view
-import kotlinx.android.synthetic.main.activity_main.pause
+import kotlinx.android.synthetic.main.activity_main.record
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
@@ -34,21 +31,7 @@ class MainActivity : AppCompatActivity() {
       //videoView.setVideoPath("rtmp://live.hkstv.hk.lxdns.com/live/hks");
       //videoView.setVideoPath("http://hdl3a.douyucdn.cn/live/64609rdkw7Kej3bb_900.flv?wsAuth=0dbce31573d7c2a42efc9d3b1e2efe11&token=app-android1-0-64609-b8ea9667eba374a3133e415a4fe74082&logo=0&expire=0&did=10786b63-0b2b-4204-a149-1181f7cb3480&ver=v3.7.1&channel=31&pt=1");
     }
-    pause.setOnClickListener {
-      //if (videoView.isPlaying()){
-      //    videoView.pause();
-      //} else
-      //    videoView.start();
-      if (!isRunning) {
-        isRunning = true
-        val transformUtils = TransformUtils()
-        transformUtils.setCompletedListener { isRunning = false }
-        transformUtils.setOnErrorListener { errorCode, ffmpegCode, msg -> isRunning = false }
-        val assetsPath = RawAssetsUtil.getAssetsFilePath(this@MainActivity, "add_wire.png")
-        transformUtils.transform("/storage/emulated/0/tencent/MicroMsg/Weixin/test.mp4", "/storage/emulated/0/test.mp4", 2, 0, 3, 0, 0, String.format("movie=%s[wm];[in]boxblur=2:1:cr=0:ar=0,colorchannelmixer=.3:.4:.3:0:.3:.4:.3:0:.3:.4:.3[main];[main][wm]overlay=20:20[out]", assetsPath))
-      }
-    }
-    findViewById<View>(R.id.record).setOnClickListener {
+    record.setOnClickListener {
       if (isRecorder) {
         isRecorder = false
         easy_video_view.stopRecorder()
@@ -83,10 +66,6 @@ class MainActivity : AppCompatActivity() {
     if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
       easy_video_view.setVideoPath("http://replay.live.tianya.cn/live-151574941100022906--20180112173015.mp4")
     }
-  }
-
-  fun ToRecorder(view: View) {
-    startActivityForResult(Intent(this, RecorderActivity::class.java), 0)
   }
 
   override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent) {

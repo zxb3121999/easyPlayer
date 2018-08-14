@@ -16,7 +16,8 @@ class TransformUtils {
   private var mCompletedListener: (() -> Unit)? =null
   private var mStartListener: (()->Unit)? = null
   private var mOnErrorListener:((Int,Int,String?)->Unit)? = null
-
+  private var mProgressListener:((Int)->Unit)?=null
+  private var time = 0
   private val mHandler = Handler(Handler.Callback { msg ->
     when (msg.what) {
       STATE_READY -> {
@@ -33,6 +34,14 @@ class TransformUtils {
         EasyLog.d(TAG, "转换视频出错:$msg")
         mOnErrorListener?.invoke(msg.arg1, msg.arg2, msg.obj as String)
       }
+      STATE_PROCESS ->{
+        System.out.println("===进度："+msg.arg1)
+        if(msg.arg1==0&&time == 0)
+            time = System.currentTimeMillis().toInt()
+        if(msg.arg1==100)
+          System.out.println("总共用时:"+(System.currentTimeMillis().toInt()-time))
+        mProgressListener?.invoke(msg.arg1)
+      }
     }
     true
   })
@@ -48,7 +57,9 @@ class TransformUtils {
   fun setOnErrorListener(onErrorListener: (Int,Int,String?)->Unit) {
     mOnErrorListener = onErrorListener
   }
-
+  fun setOnProgressLintener(onProgressListener:(Int)->Unit){
+    mProgressListener = onProgressListener
+  }
   fun transform(srcFilePath: String, dstFilePath: String, startTime: Long, endTime: Long, duration: Long, width: Int, height: Int, filterDesc: String) {
     if(!File(srcFilePath).exists()){
       postEventFromNative(STATE_ERROR,ERROR_CODE_INPUT_FILE_NOT_EXIST,-1,"视频文件不存在")
@@ -90,6 +101,7 @@ class TransformUtils {
     private const val STATE_PAUSE = 3
     private const val STATE_COMPLETED = 4
     private const val STATE_ERROR = -1
+    private const val STATE_PROCESS = 5
     private const val ERROR_CODE_INPUT_FILE_NOT_EXIST = -100001
   }
 }

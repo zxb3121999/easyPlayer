@@ -32,14 +32,16 @@ EasyTransform::~EasyTransform() {
         out = NULL;
     }
     if(in!=NULL){
-        avformat_free_context(in);
+        avformat_close_input(&in);
         in = NULL;
     }
     if(videnc){
+        videnc->avctx = NULL;
         delete(videnc);
         videnc = nullptr;
     }
     if(audenc){
+        audenc->avctx = NULL;
         delete(audenc);
         audenc = nullptr;
     }
@@ -82,7 +84,7 @@ void EasyTransform::read() {
     int64_t pkt_ts;
     int pkt_in_play_range = 0;
     if(start_time>0){
-       ret = av_seek_frame(in,-1,start_time,AVSEEK_FLAG_BACKWARD);
+       av_seek_frame(in,-1,start_time,AVSEEK_FLAG_BACKWARD);
     }
     while (true) {
         if (pause)
@@ -122,11 +124,10 @@ void EasyTransform::read() {
 
 void EasyTransform::read_audio() {
     double frame_ts = 0;
-    while(!audenc->is_finish){
-        AVFrame *frame = av_frame_alloc();
-        auddec->frame_queue->get_frame(frame);
+    while(true){
+        AVFrame *frame = auddec->frame_queue->get_frame();
         if (frame == nullptr) {//文件结束
-            audenc->is_finish = true;
+            audenc->frame_queue->put_null_frame();
             return;
         }
         if(start_time!=AV_NOPTS_VALUE&&start_time>0&&frame_ts<start_time){
@@ -140,23 +141,14 @@ void EasyTransform::read_audio() {
     }
 }
 void EasyTransform::read_video() {
-    AVFrame *temp = NULL;
-    uint8_t *vOutBuffer;
     double frame_ts = 0;
     if(height>0||width>0){
-        temp = av_frame_alloc();
-        temp->width = videnc->avctx->width;
-        temp->height = videnc->avctx->height;
-        temp->format = videnc->avctx->pix_fmt;
-        int numBytes = av_image_get_buffer_size(videnc->avctx->pix_fmt, videnc->avctx->width,videnc->avctx->height, 1);
-        vOutBuffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
-        av_image_fill_arrays(temp->data, temp->linesize, vOutBuffer, videnc->avctx->pix_fmt, videnc->avctx->width, videnc->avctx->height, 1);
+
     }
-    while(!videnc->is_finish){
-        AVFrame *frame = av_frame_alloc();
-        viddec->frame_queue->get_frame(frame);
+    while(true){
+        AVFrame *frame = viddec->frame_queue->get_frame();
         if (frame == nullptr) {//文件结束
-            videnc->is_finish = true;
+            videnc->frame_queue->put_null_frame();
             break;
         }
         if(start_time!=AV_NOPTS_VALUE&&start_time>0&&frame_ts<start_time){
@@ -167,18 +159,20 @@ void EasyTransform::read_video() {
             }
         }
         if(width>0||height>0){
+            AVFrame *temp = av_frame_alloc();
+            temp->width = videnc->avctx->width;
+            temp->height = videnc->avctx->height;
+            temp->format = videnc->avctx->pix_fmt;
+            int numBytes = av_image_get_buffer_size(videnc->avctx->pix_fmt, videnc->avctx->width,videnc->avctx->height, 1);
+            uint8_t *vOutBuffer = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t));
+            av_image_fill_arrays(temp->data, temp->linesize, vOutBuffer, videnc->avctx->pix_fmt, videnc->avctx->width, videnc->avctx->height, 1);
             sws_scale(img_convert_ctx, (const uint8_t *const *) frame->data, frame->linesize, 0,viddec->avctx->height,
                       temp->data, temp->linesize);
             videnc->frame_queue->put_frame(temp);
+            av_free(vOutBuffer);
         } else{
             videnc->frame_queue->put_frame(frame);
         }
-    }
-    if(temp){
-        av_frame_free(&temp);
-    }
-    if(vOutBuffer){
-        free(vOutBuffer);
     }
 }
 /**
@@ -209,6 +203,7 @@ void EasyTransform::write() {
     }
     bool is_video_complete = false;
     bool is_audio_complete = false;
+    int num = duration == AV_NOPTS_VALUE?in->duration:duration;
     while (!(is_audio_complete&&is_video_complete)) {
         av_packet_unref(packet);
         if (av_compare_ts(cur_pts_v, out->streams[video_out_index]->time_base, cur_pts_a, out->streams[video_out_index]->time_base) <= 0) {
@@ -229,10 +224,11 @@ void EasyTransform::write() {
             packet->pts=(double)(frame_video_index*video_calc_duration)/(av_q2d(st->time_base)*AV_TIME_BASE);
             packet->dts=packet->pts;
             packet->duration=video_duration;
-            frame_video_index++;
             cur_pts_v = packet->pts;
             if(h264bsfc)
                 av_bitstream_filter_filter(h264bsfc,actx, NULL, &packet->data, &packet->size, packet->data, packet->size, 0);
+            notify_message(STATE_PROGRESS,frame_video_index*video_calc_duration*100/num,0,"更新进度条");
+            frame_video_index++;
         } else {
             //写音频数据
             if(is_audio_complete){
