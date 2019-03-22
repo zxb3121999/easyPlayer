@@ -6,7 +6,31 @@
 #define EASYPLAYER_MASTER_CODER_H
 #include "utils.h"
 #include "threadsafe_queue.cpp"
-class Encoder{
+#ifndef RESULT_FAIL
+#define RESULT_FAIL -1
+#endif
+#ifndef RESULT_OK
+#define RESULT_OK 0
+#endif
+class Coder{
+public:
+    ~Coder();
+    int init_filter(char *filter_desc,AVRational time_base);
+    int filter_frame(AVFrame *frame);
+    AVCodecContext *avctx = NULL;
+    PacketQueue *pkt_queue = NULL;
+    FrameQueue *frame_queue = NULL;
+    AVFrame *frame_out = NULL;
+    virtual char* get_tag(){
+        return "Coder";
+    }
+protected:
+    AVFilterContext *buffersink_ctx = NULL;
+    AVFilterContext *buffersrc_ctx = NULL;
+    AVFilterGraph *filter_graph = NULL;
+
+};
+class Encoder:public Coder{
 public:
     virtual int encoder_encode_frame(AVPacket *pkt) = 0;
     virtual void encode() = 0;
@@ -20,9 +44,6 @@ public:
     }
     void start_encode_thread();
     int buf_size = 0;
-    PacketQueue *pkt_queue = NULL;
-    FrameQueue *frame_queue = NULL;
-    AVCodecContext *avctx = NULL;
     AVRational t;
     ~Encoder();
     int64_t start_time;
@@ -52,13 +73,10 @@ public:
     virtual void encode() override ;
     virtual int init_swr() override ;
     void filter(uint8_t *picture_buf);
-    int init_filter(char *filter_desc,AVRational time_base);
-private:
-private:
-    AVFilterContext *buffersink_ctx = NULL;
-    AVFilterContext *buffersrc_ctx = NULL;
-    AVFilterGraph *filter_graph = NULL;
-    AVFrame *frame_out = NULL;
+    char *get_tag(){
+        return "视频编码器";
+    }
+protected:
 };
 class AudioEncoder:public Encoder{
 public:
@@ -66,11 +84,13 @@ public:
     virtual int init_swr() override ;
     virtual int encoder_encode_frame(AVPacket *pkt) override ;
     virtual void encode() override ;
-
+    char *get_tag(){
+        return "音频编码器";
+    }
 private:
     struct SwrContext *swr = NULL;
 };
-class Decoder {
+class Decoder:public Coder{
 public:
     int decoder_decode_frame();
     void decode();
@@ -80,13 +100,13 @@ public:
     void wait_thread_stop(){
         while(is_thread_running){}
     }
-    PacketQueue *pkt_queue = NULL;
-    FrameQueue *frame_queue = NULL;
-    AVCodecContext *avctx = NULL;
+    void flush_codec();
+    int decode_frame();
     ~Decoder();
 protected:
     bool is_thread_running = false;
-    AVPacket *pkt = nullptr;
+    AVPacket *pkt = NULL;
+    AVFrame *frame = NULL;
     int pkt_serial;
     int finished;
     int packet_pending;
@@ -102,12 +122,23 @@ class VideoDecoder : public Decoder {
 public:
     int get_width();
     int get_height();
+    void set_rotate(double d){
+        rotate = d;
+    }
+    char *get_tag(){
+        return "视频解码器";
+    }
+private:
+    double rotate = 0;
 };
 
 class AudioDecoder : public Decoder {
 public:
     int get_channels();
     int get_sample_rate();
+    char *get_tag(){
+        return "音频编码器";
+    }
 private:
 
 };

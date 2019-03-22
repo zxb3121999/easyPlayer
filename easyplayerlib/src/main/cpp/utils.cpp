@@ -3,6 +3,13 @@
 //
 #include "utils.h"
 
+PacketQueue::~PacketQueue() {
+    abort_request = 1;
+    cond.notify_all();
+    full.notify_all();
+    flush();
+}
+
 //将AVPacket压入PacketQueue
 int PacketQueue::put_packet(AVPacket *pkt) {
     if (abort_request) {
@@ -130,6 +137,14 @@ size_t PacketQueue::get_queue_size() {
     return queue.size();
 }
 
+
+FrameQueue::~FrameQueue() {
+    is_stop = true;
+    empty.notify_all();
+    full.notify_all();
+    flush();
+}
+
 //从FrameQueue中获取AVFrame数据
 AVFrame* FrameQueue::get_frame() {
     std::unique_lock<std::mutex> lock(mutex);
@@ -157,7 +172,8 @@ void FrameQueue::put_frame(AVFrame *frame) {
             return;
         }
         if (queue.size() < MAX_SIZE) {
-            queue.push(frame);
+            AVFrame *temp = frame?av_frame_clone(frame):NULL;
+            queue.push(temp);
             empty.notify_one();
             return;
         }
@@ -195,4 +211,5 @@ void FrameQueue::flush() {
 
     }
     full.notify_one();
+    empty.notify_all();
 }

@@ -1,46 +1,87 @@
 apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
+apply plugin: 'kotlin-kapt'
+
+apply plugin: 'kotlin-allopen'
+apply plugin: 'androidx.navigation.safeargs'
 apply plugin: 'kotlin-android-extensions'
 
 android {
-  compileSdkVersion 27
-  buildToolsVersion "27.0.3"
-  dataBinding {
-    enabled true
-  }
-  defaultConfig {
-    applicationId "cn.jx.easyplayer"
-    minSdkVersion 16
-    targetSdkVersion 23
-    versionCode 1
-    versionName "1.0"
-    testInstrumentationRunner "android.support.test.runner.AndroidJUnitRunner"
-    ndk {
-      abiFilters 'arm64-v8a', 'armeabi-v7a'
+    compileSdkVersion build_versions.target_sdk
+    buildToolsVersion build_versions.build_tools
+    defaultConfig {
+        applicationId "cn.jx.easyplayer"
+        minSdkVersion build_versions.min_sdk
+        targetSdkVersion build_versions.target_sdk
+        versionCode 1
+        versionName "1.0"
+        ndk {
+            abiFilters 'arm64-v8a', 'armeabi-v7a','x86_64'
+        }
+        externalNativeBuild {
+            cmake {
+                cppFlags "-std=c++11"
+            }
+        }
+        dataBinding {
+            enabled = true
+        }
     }
-    externalNativeBuild {
-      cmake {
-        cppFlags "-std=c++11"
-      }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
     }
-  }
-  buildTypes {
-    release {
-      minifyEnabled false
-      proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
     }
-  }
 }
 
 dependencies {
-  implementation 'com.android.support.constraint:constraint-layout:1.0.2'
-  implementation fileTree(dir: 'libs', include: ['*.jar'])
-  implementation 'com.android.support:design:27.1.1'
-  androidTestImplementation('com.android.support.test.espresso:espresso-core:2.2.2', {
-    exclude group: 'com.android.support', module: 'support-annotations'
-  })
-  implementation 'com.android.support:appcompat-v7:26.1.0'
-  implementation project(':easyplayerlib')
-  testImplementation 'junit:junit:4.12'
-  implementation "org.jetbrains.kotlin:kotlin-stdlib-jre7:$kotlin_version"
+
+    implementation deps.support.app_compat
+    implementation deps.support.recyclerview
+    implementation deps.support.annotations
+    implementation deps.kotlin.coroutines_android
+    implementation deps.kotlin.coroutines
+    implementation deps.lifecycle.runtime
+    implementation deps.lifecycle.extensions
+    implementation deps.lifecycle.java8
+    implementation deps.retrofit.runtime
+    implementation deps.retrofit.gson
+    implementation deps.glide.runtime
+    implementation deps.constraint_layout
+    implementation deps.kotlin.stdlib
+    implementation deps.room.runtime
+    implementation deps.paging_ktx
+    implementation deps.navigation.fragment_ktx
+    implementation deps.timber
+
+    kapt deps.room.compiler
+    kapt deps.lifecycle.compiler
+    kapt deps.glide.compiler
+    implementation project(path: ':mvvm')
+    implementation project(path: ':easyplayerlib')
+
+    testImplementation deps.junit
+    testImplementation deps.mock_web_server
+
+    androidTestImplementation deps.atsl.runner
+    androidTestImplementation deps.atsl.rules
+
+    androidTestImplementation deps.navigation.testing
+    androidTestImplementation deps.support.app_compat
+    androidTestImplementation deps.support.recyclerview
+    androidTestImplementation deps.support.cardview
+    androidTestImplementation deps.support.design
+
+    androidTestImplementation deps.espresso.core
+    androidTestImplementation deps.espresso.contrib
+
+    androidTestImplementation deps.arch_core.testing
+    androidTestImplementation deps.mockito.core
+    androidTestImplementation deps.mockito.android
+
 }

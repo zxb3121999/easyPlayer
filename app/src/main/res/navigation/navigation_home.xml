@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/navigation_home"
+    app:startDestination="@id/fragment_home">
+    <fragment
+        android:id="@+id/fragment_home"
+        android:label="首页"
+        android:name="cn.zxb.demo.ui.scan.ScanVideoFragment"
+        tools:layout="@layout/scan_video_fragment">
+        <action android:id="@+id/play_video"
+            app:destination="@id/fragment_play_video"/>
+    </fragment>
+    <fragment
+        android:id="@+id/fragment_play_video"
+        android:label="播放"
+        android:name="cn.zxb.demo.ui.play.PlayVideoFragment"
+        tools:layout="@layout/play_video_fragment"
+        >
+        <argument
+            android:name="video_url"
+            app:argType="string"/>
+    </fragment>
+</navigation>

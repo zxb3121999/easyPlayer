@@ -4,22 +4,9 @@
     android:id="@+id/activity_main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context="cn.jx.easyplayer.MainActivity">
-    <cn.jx.easyplayerlib.view.EasyVideoView
+    tools:context="cn.zxb.demo.MainActivity">
+    <cn.zxb.media.view.EasyVideoView
         android:id="@+id/easy_video_view"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
-    <Button
-        android:id="@+id/record"
-        android:layout_above="@+id/pause"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="录播"
-        android:visibility="gone"/>
-    <Button
-        android:onClick="ToRecorder"
-        android:layout_above="@+id/record"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="转换视频"/>
 </RelativeLayout>

@@ -29,6 +29,7 @@ extern "C"{
 #include <stdio.h>
 class PacketQueue {
 public:
+    ~PacketQueue();
     int put_packet(AVPacket *pkt);
     int get_packet(AVPacket *pkt);
     int remove_one();
@@ -56,6 +57,7 @@ private:
 
 class FrameQueue {
 public:
+    ~FrameQueue();
     void put_frame(AVFrame *frame);
     int put_null_frame();
     AVFrame* get_frame();
@@ -75,7 +77,7 @@ private:
     std::mutex mutex;
     std::condition_variable empty;
     std::condition_variable full;
-    const size_t MAX_SIZE = 1000;
+    const size_t MAX_SIZE = 100;
 };
 
 #endif //EASYPLAYER_MASTER_UTILS_H

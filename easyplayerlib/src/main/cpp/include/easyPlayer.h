@@ -66,15 +66,17 @@ enum class TransformState{
 };
 class EasyPlayer {
 public:
+    jobject obj;
+    jmethodID methodId;
     EasyPlayer() = default;
     ~EasyPlayer();
     void set_data_source(const std::string input_filename);
     void prepare();
-    void prepare_async();
+    void prepare_async(bool play_when_ready);
     bool has_video();
     bool has_audio();
     bool get_img_frame(AVFrame *frame);
-    bool get_aud_buffer(int &nextSize, uint8_t *outputBuffer);
+    bool get_aud_buffer();
     void wait_state(PlayerState need_state);
     void wait_paused();
     void stop();
@@ -88,11 +90,9 @@ public:
             state = PlayerState::PLAYING;
             paused = false;
             pause_condition.notify_all();
-            if(bqPlayerPlay&&!audio_complete){
-                (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PLAYING);
-            }
-            play_when_ready = true;
+            av_log(NULL,AV_LOG_FATAL,"通知暂停结束");
         }
+        play_when_ready = true;
     }
     void play() {
         resume();
@@ -113,9 +113,7 @@ public:
             paused = true;
             pause_condition.notify_all();
             state = PlayerState::READY;
-            if(bqPlayerPlay){
-                (*bqPlayerPlay)->SetPlayState(bqPlayerPlay, SL_PLAYSTATE_PAUSED);
-            }
+            notify_message(MEDIA_PAUSE,0,0,"暂停播放");
         }
 
     }
@@ -128,17 +126,23 @@ public:
                 ANativeWindow_release(nativeWindow);
             }
             nativeWindow = window;
+//            native_window_width = ANativeWindow_getWidth(window);
+//            native_window_height = ANativeWindow_getHeight(window);
             if(has_video()&&!video_complete){
-                if (0 > ANativeWindow_setBuffersGeometry(nativeWindow, viddec->get_width(), viddec->get_height(), WINDOW_FORMAT_RGBA_8888)) {
+                ANativeWindow_acquire(nativeWindow);
+                if (0 > ANativeWindow_setBuffersGeometry(nativeWindow, native_window_width,native_window_height, WINDOW_FORMAT_RGBA_8888)) {
                     ANativeWindow_release(nativeWindow);
                     return;
                 }
                 window_inited = true;
             }
         } else{
+            native_window_mutex.lock();
             window_inited = false;
-            ANativeWindow_release(nativeWindow);
+            if(nativeWindow)
+                ANativeWindow_release(nativeWindow);
             nativeWindow = nullptr;
+            native_window_mutex.unlock();
         }
     }
     void set_play_state(bool is_audio, bool state){
@@ -160,14 +164,18 @@ public:
     }
     int64_t get_duration() {
         if (ic != nullptr) {
-            return (ic->duration)/1000;
+            return (ic->pb->seekable&&ic->duration)?(ic->duration)/1000:0;
         }
-    };
+        return 0;
+    }
     long get_curr_position() {
-        return audio_clock?(long)(audio_clock * 1000-ic->start_time/1000):audio_clock;
-    };
-    void stream_seek(int64_t pos);
-    void set_event_listener(void (*cb)(EasyPlayer *player,int, int, int,char *)) {
+        if(ic != nullptr){
+            return audio_clock?(long)(audio_clock * 1000-ic->start_time/1000):audio_clock;
+        }
+        return 0;
+    }
+    bool stream_seek(int64_t pos);
+    void set_event_listener(void (*cb)(int,int, int, int,char *)) {
         event_listener = cb;
     }
     void recorder_run();
@@ -184,6 +192,9 @@ public:
     }
     void set_background_sate(bool is_in_background){
         this->is_in_background = is_in_background;
+        if(is_in_background){
+            set_window(NULL);
+        }
         if(!can_play_in_background){
             if(is_in_background)
                 pause();
@@ -194,6 +205,13 @@ public:
     bool is_recordering(){
         return recorder;
     }
+    int get_id(){
+        return id;
+    }
+    void set_id(int id){
+        this->id = id;
+    }
+
     AVFormatContext *ic = NULL;
     AVFormatContext *out = NULL;
     char *filename = nullptr;
@@ -207,14 +225,16 @@ public:
     VideoDecoder *viddec = nullptr;
     PlayerState state = PlayerState::UNKNOWN;
 private:
+    int id = -1;
     void notify_message(int state,int error_code,int ffmpeg_code,char *err_msg){
         if(event_listener!= nullptr){
-            event_listener(this,state,error_code,ffmpeg_code,err_msg);
+            event_listener(id,state,error_code,ffmpeg_code,err_msg);
         }
     }
-
     ANativeWindow *nativeWindow = NULL;
     bool window_inited = false;
+    int native_window_width = 0;
+    int native_window_height = 0;
     void play_video();
     void play_audio();
     void read();
@@ -228,7 +248,7 @@ private:
     bool paused = false;
     bool play_when_ready = false;
     bool file_changed = false;
-    void (*event_listener)(EasyPlayer *,int, int, int,char *);
+    void (*event_listener)(int,int, int, int,char *);
     struct SwsContext *img_convert_ctx = NULL;
 
     double audio_clock = 0;
@@ -237,13 +257,16 @@ private:
 
     int audio_stream = -1;
 
+    bool is_open_input = false;
     bool audio_complete = true;
     bool video_complete = true;
     bool read_complete = true;
-    bool can_play_in_background = true;
+    bool can_play_in_background = false;
     bool is_in_background = false;
     int64_t start_time = AV_NOPTS_VALUE;
     int64_t duration = AV_NOPTS_VALUE;
+    std::mutex native_window_mutex;
+
     std::mutex mutex;
     std::condition_variable state_condition;
     std::condition_variable pause_condition;
@@ -251,6 +274,8 @@ private:
     std::condition_variable audio_condition;
     std::mutex stop_mutex;
     std::condition_variable stop_condition;
+    std::mutex open_input_mutex;
+    std::condition_variable open_input_condition;
     //open sles start
     SLObjectItf engineObject = NULL;
     SLEngineItf engineEngine = NULL;
@@ -274,7 +299,7 @@ private:
 
 // aux effect on the output mix, used by the buffer queue player
     const SLEnvironmentalReverbSettings reverbSettings = SL_I3DL2_ENVIRONMENT_PRESET_STONECORRIDOR;
-    const int outputBufferSize = 8196;
+    int outputBufferSize = 10240;
     void createAudioEngine();
     void createBufferQueueAudioPlayer(int sampleRate, int channel);
     friend void bqPlayerCallback(SLAndroidSimpleBufferQueueItf bq, void *context);
@@ -291,15 +316,17 @@ private:
     PacketQueue recorder_queue;
     std::mutex recorder_mutex;
     std::condition_variable recorder_condition;
-    int recorder_compenent_open(int index);
+    int recorder_component_open(int index);
 
     static const int MEDIA_NOP = 0; // interface test message
-    static const int MEDIA_PREPARED = 1;
-    static const int MEDIA_PLAYBACK_COMPLETE = 2;
-    static const int MEDIA_BUFFERING_UPDATE = 3;
-    static const int MEDIA_SEEK_COMPLETE = 4;
-    static const int MEDIA_SET_VIDEO_SIZE = 5;
-    static const int MEDIA_STOP = 6;
+    static const int MEDIA_PREPARED = 10;
+    static const int MEDIA_PLAYBACK_COMPLETE = 20;
+    static const int MEDIA_BUFFERING_UPDATE = 30;
+    static const int MEDIA_SEEK_COMPLETE = 40;
+    static const int MEDIA_SET_VIDEO_SIZE = 50;
+    static const int MEDIA_STOP = 60;
+    static const int MEDIA_PLAYING = 70;
+    static const int MEDIA_PAUSE = 80;
     static const int MEDIA_TIMED_TEXT = 99;
     static const int MEDIA_ERROR = -1;
     static const int REOCRDER_ERROR = -1000;
