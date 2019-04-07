@@ -10,17 +10,17 @@ Coder::~Coder() {
     if (frame_out) {
         av_frame_free(&frame_out);
     }
-    frame_out = NULL;
+    if (buffersink_ctx)
+        avfilter_free(buffersink_ctx);
+    buffersink_ctx = NULL;
+    if (buffersrc_ctx)
+        avfilter_free(buffersrc_ctx);
+    buffersrc_ctx = NULL;
+
     if (filter_graph != NULL) {
         avfilter_graph_free(&filter_graph);
     }
     filter_graph = NULL;
-    if(buffersink_ctx)
-        avfilter_free(buffersink_ctx);
-    buffersink_ctx = NULL;
-    if(buffersrc_ctx)
-        avfilter_free(buffersrc_ctx);
-    buffersrc_ctx = NULL;
 }
 
 int Coder::init_filter(char *filter_desc, AVRational time_base) {
@@ -88,23 +88,20 @@ int Coder::init_filter(char *filter_desc, AVRational time_base) {
 
 int Coder::filter_frame(AVFrame *frame) {
     int ret = RESULT_FAIL;
-    AVFrame *filter_frame = av_frame_alloc();
-    if (frame &&
-        (ret = av_buffersrc_add_frame_flags(buffersrc_ctx, frame, AV_BUFFERSRC_FLAG_KEEP_REF) < 0)) {
-        av_log(NULL, AV_LOG_ERROR, "Error while feeding the filtergraph\n");
-        av_frame_free(&filter_frame);
-        goto end;
-    }
 
-    ret = av_buffersink_get_frame(buffersink_ctx, filter_frame)==AVERROR_EOF?RESULT_FAIL:ret;
-    if (ret < 0||ret == AVERROR_EOF) {
+    if (frame &&
+        (ret = av_buffersrc_add_frame_flags(buffersrc_ctx, frame, AV_BUFFERSRC_FLAG_KEEP_REF) <
+               0)) {
+        av_log(NULL, AV_LOG_ERROR, "Error while feeding the filtergraph\n");
+        return ret;
+    }
+    AVFrame *filter_frame = av_frame_alloc();
+    ret = av_buffersink_get_frame(buffersink_ctx, filter_frame) == AVERROR_EOF ? RESULT_FAIL : ret;
+    if (ret < 0 || ret == AVERROR_EOF) {
         av_frame_free(&filter_frame);
-        goto end;
+        return ret;
     }
     frame_queue->put_frame(filter_frame);
-    end:
-    if (frame)
-        av_frame_free(&frame);
     return ret;
 }
 
@@ -129,7 +126,6 @@ Encoder::~Encoder() {
     if (frame) {
         av_frame_free(&frame);
     }
-    frame = NULL;
     if (frame_queue) {
         frame_queue->flush();
         delete (frame_queue);
@@ -183,7 +179,6 @@ void Encoder::loop() {
     pkt_queue->put_nullpacket();
     av_frame_free(&frame);
     av_packet_free(&pkt);
-    frame = NULL;
 }
 
 VideoEncoder::~VideoEncoder() {
@@ -444,6 +439,7 @@ void Decoder::init(AVCodecContext *ctx) {
     pkt = av_packet_alloc();
     pkt_queue = new PacketQueue;
     frame_queue = new FrameQueue;
+    tag = get_tag();
 }
 
 Decoder::~Decoder() {
@@ -464,7 +460,7 @@ Decoder::~Decoder() {
         avcodec_free_context(&avctx);
         avctx = NULL;
     }
-    av_log(NULL,AV_LOG_FATAL,"释放%s资源完成",get_tag());
+    av_log(NULL, AV_LOG_FATAL, "释放%s资源完成", tag);
 }
 
 void Decoder::flush() {
@@ -492,7 +488,7 @@ void Decoder::start_decode_thread() {
 void Decoder::flush_codec() {
     while (!decode_frame());//刷新avcodec_receive_frame中的AVFrame
     if (buffersink_ctx && buffersrc_ctx)
-        while (filter_frame(NULL)>=0);//刷新av_buffersink_get_frame中的AVFrame
+        while (filter_frame(NULL) >= 0);//刷新av_buffersink_get_frame中的AVFrame
     avcodec_flush_buffers(avctx);
 }
 
@@ -507,10 +503,11 @@ int Decoder::decode_frame() {
         frame->pts = frame->best_effort_timestamp;
         if (buffersrc_ctx && buffersink_ctx) {
             filter_frame(frame);
+            av_frame_free(&frame);
         } else {
             frame_queue->put_frame(frame);
         }
-    } else{
+    } else {
         av_frame_free(&frame);
     }
     return ret;
@@ -562,7 +559,7 @@ void Decoder::decode() {
         }
     }
     is_thread_running = false;
-    av_log(NULL,AV_LOG_FATAL,"decode thread %s finish",get_tag());
+    av_log(NULL, AV_LOG_FATAL, "decode thread %s finish", get_tag());
 }
 
 //获取channels
