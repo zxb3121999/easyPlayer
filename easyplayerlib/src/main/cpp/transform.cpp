@@ -169,6 +169,7 @@ void EasyTransform::read_video() {
             sws_scale(img_convert_ctx, (const uint8_t *const *) frame->data, frame->linesize, 0,viddec->avctx->height,
                       temp->data, temp->linesize);
             videnc->frame_queue->put_frame(temp);
+            av_frame_free(&frame);
             av_free(vOutBuffer);
         } else{
             videnc->frame_queue->put_frame(frame);

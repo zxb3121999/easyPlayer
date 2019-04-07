@@ -106,7 +106,6 @@ public:
 protected:
     bool is_thread_running = false;
     AVPacket *pkt = NULL;
-    AVFrame *frame = NULL;
     int pkt_serial;
     int finished;
     int packet_pending;

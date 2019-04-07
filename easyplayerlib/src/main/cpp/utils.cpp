@@ -27,7 +27,7 @@ int PacketQueue::put_packet(AVPacket *pkt) {
                 av_log(NULL, AV_LOG_FATAL, "Could not create new AVPacket.\n");
                 return -1;
             }
-            if(pkt->size!=0){
+            if (pkt->size != 0) {
                 ret = av_packet_ref(packet, pkt);
                 av_packet_unref(pkt);
                 if (ret != 0) {
@@ -35,7 +35,7 @@ int PacketQueue::put_packet(AVPacket *pkt) {
                     av_log(NULL, AV_LOG_FATAL, "Could not copy AVPacket.\n");
                     return -1;
                 }
-            } else{
+            } else {
                 packet->data = NULL;
                 packet->size = 0;
             }
@@ -146,10 +146,10 @@ FrameQueue::~FrameQueue() {
 }
 
 //从FrameQueue中获取AVFrame数据
-AVFrame* FrameQueue::get_frame() {
+AVFrame *FrameQueue::get_frame() {
     std::unique_lock<std::mutex> lock(mutex);
     for (;;) {
-        if(is_stop){
+        if (is_stop) {
             return NULL;
         }
         if (queue.size() > 0) {
@@ -166,18 +166,20 @@ AVFrame* FrameQueue::get_frame() {
 void FrameQueue::put_frame(AVFrame *frame) {
     std::unique_lock<std::mutex> lock(mutex);
     while (true) {
-        if(is_stop){
-            if(frame)
+        if (is_stop) {
+            if (frame)
                 av_frame_free(&frame);
-            return;
-        }
-        if (queue.size() < MAX_SIZE) {
-            AVFrame *temp = frame?av_frame_clone(frame):NULL;
-            queue.push(temp);
+            else
+                queue.push(NULL);
             empty.notify_one();
             return;
         }
-        full.wait(lock);;
+        if (queue.size() < MAX_SIZE) {
+            queue.push(frame);
+            empty.notify_one();
+            return;
+        }
+        full.wait(lock);
     }
 
 }
@@ -205,7 +207,7 @@ void FrameQueue::flush() {
     while (queue.size() > 0) {
         auto tmp = queue.front();
         queue.pop();
-        if(tmp!= nullptr){
+        if (tmp != nullptr) {
             av_frame_free(&tmp);
         }
 

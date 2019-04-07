@@ -88,18 +88,20 @@ int Coder::init_filter(char *filter_desc, AVRational time_base) {
 
 int Coder::filter_frame(AVFrame *frame) {
     int ret = RESULT_FAIL;
+    AVFrame *filter_frame = av_frame_alloc();
     if (frame &&
-        (ret = av_buffersrc_add_frame_flags(buffersrc_ctx, frame, AV_BUFFERSRC_FLAG_KEEP_REF) <
-               0)) {
+        (ret = av_buffersrc_add_frame_flags(buffersrc_ctx, frame, AV_BUFFERSRC_FLAG_KEEP_REF) < 0)) {
         av_log(NULL, AV_LOG_ERROR, "Error while feeding the filtergraph\n");
+        av_frame_free(&filter_frame);
         goto end;
     }
-    ret = av_buffersink_get_frame(buffersink_ctx, frame_out)==AVERROR_EOF?RESULT_FAIL:ret;
+
+    ret = av_buffersink_get_frame(buffersink_ctx, filter_frame)==AVERROR_EOF?RESULT_FAIL:ret;
     if (ret < 0||ret == AVERROR_EOF) {
+        av_frame_free(&filter_frame);
         goto end;
     }
-    frame_queue->put_frame(frame_out);
-    av_frame_unref(frame_out);
+    frame_queue->put_frame(filter_frame);
     end:
     if (frame)
         av_frame_free(&frame);
@@ -440,10 +442,6 @@ void Decoder::init(AVCodecContext *ctx) {
     }
     avctx = ctx;
     pkt = av_packet_alloc();
-    if (frame) {
-        av_frame_free(&frame);
-    }
-    frame = av_frame_alloc();
     pkt_queue = new PacketQueue;
     frame_queue = new FrameQueue;
 }
@@ -461,10 +459,6 @@ Decoder::~Decoder() {
     }
     if (pkt) {
         av_packet_free(&pkt);
-    }
-
-    if (frame) {
-        av_frame_free(&frame);
     }
     if (avctx) {
         avcodec_free_context(&avctx);
@@ -507,14 +501,17 @@ void Decoder::flush_codec() {
  * @return
  */
 int Decoder::decode_frame() {
+    AVFrame *frame = av_frame_alloc();
     int ret = avcodec_receive_frame(avctx, frame);
     if (!ret) {
         frame->pts = frame->best_effort_timestamp;
         if (buffersrc_ctx && buffersink_ctx) {
-            filter_frame(av_frame_clone(frame));
+            filter_frame(frame);
         } else {
             frame_queue->put_frame(frame);
         }
+    } else{
+        av_frame_free(&frame);
     }
     return ret;
 }
